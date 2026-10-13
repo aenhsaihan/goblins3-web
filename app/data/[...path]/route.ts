@@ -22,7 +22,7 @@ const ALLOWED_DATA_FILES = new Set([
 export const runtime = 'edge';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await context.params;
@@ -48,6 +48,13 @@ export async function GET(
   headers.set('cache-control', 'public, max-age=86400, stale-while-revalidate=604800');
   headers.set('cross-origin-resource-policy', 'same-origin');
   headers.set('x-content-type-options', 'nosniff');
+
+  if (file === 'index.json') {
+    const index = (await upstream.json()) as Record<string, unknown>;
+    index.games = { baseUrl: `${new URL(request.url).origin}/game` };
+
+    return Response.json(index, { status: 200, headers });
+  }
 
   return new Response(upstream.body, { status: 200, headers });
 }
