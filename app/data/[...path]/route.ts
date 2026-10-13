@@ -45,16 +45,17 @@ export async function GET(
   const headers = new Headers();
   const contentType = upstream.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
-  headers.set('cache-control', 'public, max-age=86400, stale-while-revalidate=604800');
   headers.set('cross-origin-resource-policy', 'same-origin');
   headers.set('x-content-type-options', 'nosniff');
 
   if (file === 'index.json') {
+    headers.set('cache-control', 'no-store');
     const index = (await upstream.json()) as Record<string, unknown>;
     index.games = { baseUrl: `${new URL(request.url).origin}/game` };
 
     return Response.json(index, { status: 200, headers });
   }
 
+  headers.set('cache-control', 'public, max-age=86400, stale-while-revalidate=604800');
   return new Response(upstream.body, { status: 200, headers });
 }

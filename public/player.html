@@ -92,6 +92,32 @@
         let holdTriggered = false;
         let playerReady = false;
 
+        // Keep every demo-data request on this origin. This avoids mobile
+        // privacy relays and cross-origin range-request handling differences.
+        // The rewrite also protects returning visitors whose browser cached
+        // the older catalog response with the third-party mirror URL.
+        const nativeFetch = window.fetch.bind(window);
+        const demoMirrorOrigin = 'https://scummvm-data.kuendig.io';
+        const demoMirrorPath = '/gob3-dos-demo-en/';
+        window.fetch = (input, init) => {
+          if (typeof input !== 'string') return nativeFetch(input, init);
+
+          const url = new URL(input, location.href);
+          if (url.origin === demoMirrorOrigin && url.pathname.startsWith(demoMirrorPath)) {
+            url.protocol = location.protocol;
+            url.host = location.host;
+            url.pathname = `/game${url.pathname}`;
+            return nativeFetch(url.href, init);
+          }
+
+          if (url.origin === location.origin && url.pathname === '/data/index.json') {
+            url.searchParams.set('site-data', '2');
+            return nativeFetch(url.href, { ...init, cache: 'reload' });
+          }
+
+          return nativeFetch(input, init);
+        };
+
         const notify = (type, text) => {
           if (window.parent !== window) {
             window.parent.postMessage({ source: 'goblins3-player', type, text }, parentOrigin);
