@@ -91,6 +91,11 @@
         let holdStart = null;
         let holdTriggered = false;
         let playerReady = false;
+        const demoDirectory = '/games/gob3-dos-demo-en';
+        const demoFiles = [
+          '2.exe', '2.txt', 'all.ask', 'cat.inf', 'cd.cfg', 'gob3.exe',
+          'imd.itk', 'imd.ltk', 'intro.stk', 'mdo.cfg', 'mdo.def', 'setup.exe'
+        ];
 
         // Keep every demo-data request on this origin. This avoids mobile
         // privacy relays and cross-origin range-request handling differences.
@@ -213,7 +218,39 @@
         });
 
         window.Module = {
-          preRun: [],
+          preRun: [() => {
+            const dependency = 'preload-gob3-demo';
+            addRunDependency(dependency);
+
+            (async () => {
+              FS.mkdirTree(demoDirectory);
+
+              for (let index = 0; index < demoFiles.length; index += 1) {
+                const filename = demoFiles[index];
+                const percent = Math.round(((index + 1) / demoFiles.length) * 72) + 12;
+                statusText.textContent = `Loading demo files ${index + 1}/${demoFiles.length}…`;
+                progress.style.width = `${percent}%`;
+                notify('status', `Loading demo files ${index + 1}/${demoFiles.length}…`);
+
+                const response = await nativeFetch(
+                  `/game-v5/gob3-dos-demo-en/${encodeURIComponent(filename)}`,
+                  { cache: 'reload' },
+                );
+                if (!response.ok) {
+                  throw new Error(`${filename}: HTTP ${response.status}`);
+                }
+
+                FS.writeFile(`${demoDirectory}/${filename}`, new Uint8Array(await response.arrayBuffer()));
+              }
+            })()
+              .then(() => removeRunDependency(dependency))
+              .catch((error) => {
+                const detail = error instanceof Error ? error.message : String(error);
+                statusText.textContent = `Demo download failed: ${detail}`;
+                notify('status', `Demo download failed: ${detail}`);
+                console.error('Goblins 3 preload failed:', error);
+              });
+          }],
           postRun: [markReady],
           print(text) {
             if (!text) return;
