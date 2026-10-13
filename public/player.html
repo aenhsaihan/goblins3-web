@@ -106,12 +106,12 @@
           if (url.origin === demoMirrorOrigin && url.pathname.startsWith(demoMirrorPath)) {
             url.protocol = location.protocol;
             url.host = location.host;
-            url.pathname = `/game${url.pathname}`;
+            url.pathname = `/game-v5${url.pathname}`;
             return nativeFetch(url.href, init);
           }
 
           if (url.origin === location.origin && url.pathname === '/data/index.json') {
-            url.searchParams.set('site-data', '2');
+            url.searchParams.set('site-data', '5');
             return nativeFetch(url.href, { ...init, cache: 'reload' });
           }
 

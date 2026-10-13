@@ -51,7 +51,7 @@ export async function GET(
   if (file === 'index.json') {
     headers.set('cache-control', 'no-store');
     const index = (await upstream.json()) as Record<string, unknown>;
-    index.games = { baseUrl: `${new URL(request.url).origin}/game` };
+    index.games = { baseUrl: `${new URL(request.url).origin}/game-v5` };
 
     return Response.json(index, { status: 200, headers });
   }
