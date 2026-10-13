@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const PLAYER_URL =
-  '/player.html?build=6#--path=/games/gob3-dos-demo-en gob:gob3';
+  '/player.html?build=7#--music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 
 type PlayerMessage = {
   source?: string;
