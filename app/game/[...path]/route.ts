@@ -40,6 +40,21 @@ async function proxyGameFile(
 ) {
   const { path } = await context.params;
 
+  if (path.length === 1 && path[0] === 'index.json') {
+    const headers = new Headers({
+      'cache-control': 'no-store',
+      'content-type': 'application/json',
+      'cross-origin-resource-policy': 'same-origin',
+      'x-content-type-options': 'nosniff',
+    });
+    const catalog = JSON.stringify({ [DEMO_DIRECTORY]: {} });
+
+    return new Response(headOnly ? null : catalog, {
+      status: 200,
+      headers,
+    });
+  }
+
   if (path.length !== 2 || path[0] !== DEMO_DIRECTORY || !ALLOWED_GAME_FILES.has(path[1])) {
     return new Response('Not found', { status: 404 });
   }
