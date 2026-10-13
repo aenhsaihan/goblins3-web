@@ -1,0 +1,25 @@
+# Goblins 3 Web
+
+A mobile-first wrapper around the real English DOS demo of **Goblins Quest 3**, running in ScummVM WebAssembly.
+
+## What works
+
+- Real Goblins Quest 3 demo; no mock game screen
+- Tap/drag input, two-finger right-click from ScummVM, and a custom 520 ms long-press right-click
+- Dedicated Inventory, Sound, and Fullscreen controls
+- Responsive landscape mode and safe-area support
+- ScummVM IDBFS persistence for configuration and save data
+- Game data streamed from the ScummVM community demo mirror rather than bundled
+
+## Local development
+
+Use the package manager recorded in `pnpm-lock.yaml`:
+
+```sh
+pnpm dev
+pnpm build
+```
+
+The server needs outbound HTTPS access to `scummvm.kuendig.io` to proxy the GPL runtime. Browsers also fetch demo data directly from `scummvm-data.kuendig.io`.
+
+See `THIRD_PARTY_NOTICES.md` for provenance and licensing details.

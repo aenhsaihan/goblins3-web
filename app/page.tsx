@@ -1,0 +1,237 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import {
+  BadgeCheck,
+  Expand,
+  Gamepad2,
+  Hand,
+  MousePointer2,
+  RotateCw,
+  ShieldCheck,
+} from 'lucide-react';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+
+const PLAYER_URL =
+  '/player.html#--path=/data/games/gob3-dos-demo-en gob:gob3';
+
+type PlayerMessage = {
+  source?: string;
+  type?: 'ready' | 'status';
+  text?: string;
+};
+
+export default function Home() {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState('Preparing the ScummVM engine…');
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent<PlayerMessage>) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.source !== 'goblins3-player') return;
+
+      if (event.data.type === 'ready') {
+        setReady(true);
+        setStatus('Demo ready');
+      } else if (event.data.type === 'status' && event.data.text) {
+        setStatus(event.data.text);
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  const enterFullscreen = async () => {
+    const frame = frameRef.current;
+    if (!frame) return;
+
+    try {
+      await frame.requestFullscreen();
+    } catch {
+      frame.contentWindow?.postMessage(
+        { source: 'goblins3-shell', type: 'fullscreen' },
+        window.location.origin,
+      );
+    }
+  };
+
+  return (
+    <main className="min-h-svh overflow-x-hidden bg-background text-foreground">
+      <div className="scanlines" aria-hidden="true" />
+
+      <header className="relative z-20 flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6 lg:px-8">
+        <a href="#game" className="flex items-center gap-2.5">
+          <span className="grid size-8 place-items-center rounded-sm border border-amber-300/30 bg-amber-300/10 text-amber-200">
+            <Gamepad2 className="size-4" />
+          </span>
+          <span className="font-display text-sm tracking-[0.22em] text-amber-50 sm:text-base">
+            GOBLINS 3 <em className="not-italic text-amber-300">WEB</em>
+          </span>
+        </a>
+        <Badge
+          variant="outline"
+          className="border-emerald-300/25 bg-emerald-400/10 text-[10px] uppercase tracking-[0.14em] text-emerald-200"
+        >
+          <span className="size-1.5 rounded-full bg-emerald-300 shadow-[0_0_9px_rgba(110,231,183,.9)]" />
+          Real DOS demo
+        </Badge>
+      </header>
+
+      <section id="game" className="relative z-10 mx-auto w-full max-w-[1480px] px-3 pb-10 pt-5 sm:px-6 lg:px-8">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="eyebrow">Coktel Vision · 1993 · English demo</p>
+            <h1 className="font-display mt-1 text-[clamp(1.6rem,5vw,3.7rem)] leading-none tracking-[-0.04em] text-[#fff7d7]">
+              Goblins Quest 3
+            </h1>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-stone-400">
+            <span
+              className={`size-2 rounded-full ${ready ? 'bg-emerald-300' : 'animate-pulse bg-amber-300'}`}
+              aria-hidden="true"
+            />
+            <span aria-live="polite">{status}</span>
+          </div>
+        </div>
+
+        <div className="cabinet-shell">
+          <div className="cabinet-bar">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="size-2 rounded-full bg-[#ff6b35]" />
+              <span className="size-2 rounded-full bg-amber-300" />
+              <span className="size-2 rounded-full bg-emerald-300" />
+              <span className="ml-2 truncate text-[10px] uppercase tracking-[0.18em] text-stone-400">
+                ScummVM WebAssembly
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={enterFullscreen}
+              className="h-7 text-[11px] text-stone-300 hover:bg-white/10 hover:text-white"
+              aria-label="Open game fullscreen"
+            >
+              <Expand className="size-3.5" />
+              Fullscreen
+            </Button>
+          </div>
+
+          <div className="game-frame-wrap">
+            {!ready && (
+              <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#080707]/72 backdrop-blur-[2px]">
+                <div className="max-w-xs px-6 text-center">
+                  <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full border border-amber-300/25 bg-amber-300/10">
+                    <Gamepad2 className="size-6 animate-pulse text-amber-200" />
+                  </div>
+                  <p className="font-display text-lg tracking-wide text-amber-50">
+                    Waking the goblins…
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-stone-400">{status}</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              ref={frameRef}
+              title="Playable Goblins Quest 3 DOS demo"
+              src={PLAYER_URL}
+              allow="autoplay; fullscreen; gamepad"
+              className="game-frame"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <ControlCard
+            icon={<MousePointer2 />}
+            title="Tap to act"
+            copy="A quick tap is the left mouse button. Drag to guide Blount around the scene."
+          />
+          <ControlCard
+            icon={<Hand />}
+            title="Hold for inventory"
+            copy="Press and hold for half a second, use two fingers, or tap the Inventory control."
+          />
+          <ControlCard
+            icon={<RotateCw />}
+            title="Landscape is best"
+            copy="Turn your phone sideways, then use Fullscreen for the original 320×200 view."
+          />
+        </div>
+
+        <div className="mt-8 grid gap-5 border-t border-white/10 pt-6 lg:grid-cols-[1fr_auto] lg:items-start">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-2 text-sm font-semibold text-stone-200">
+              <ShieldCheck className="size-4 text-emerald-300" />
+              Demo provenance
+            </div>
+            <p className="mt-2 text-xs leading-5 text-stone-500 sm:text-sm">
+              The game data is not bundled into this site. It is streamed from the
+              ScummVM community web-demo mirror; ScummVM&apos;s official catalog also
+              publishes this exact DOS demo. ScummVM is free software under the GPL.
+              Goblins Quest 3 remains the property of its respective rights holders.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">
+            <a
+              href="https://www.scummvm.org/demos/#gob"
+              target="_blank"
+              rel="noreferrer"
+              className="link"
+            >
+              Official demo catalog
+            </a>
+            <a
+              href="https://github.com/chkuendig/scummvm-demo/tree/4babbd680a05a724de2ebf20ee317cd53742b9bf"
+              target="_blank"
+              rel="noreferrer"
+              className="link"
+            >
+              Runtime source
+            </a>
+            <a
+              href="https://www.scummvm.org/"
+              target="_blank"
+              rel="noreferrer"
+              className="link"
+            >
+              ScummVM
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <footer className="relative z-10 flex flex-col gap-2 border-t border-white/10 px-4 py-5 text-[11px] text-stone-600 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <span>An independent preservation experiment — not affiliated with Coktel Vision or ScummVM.</span>
+        <span className="flex items-center gap-1.5">
+          <BadgeCheck className="size-3.5 text-emerald-400/70" />
+          No uploads. Saves stay in this browser.
+        </span>
+      </footer>
+    </main>
+  );
+}
+
+function ControlCard({
+  icon,
+  title,
+  copy,
+}: {
+  icon: React.ReactElement;
+  title: string;
+  copy: string;
+}) {
+  return (
+    <article className="control-card">
+      <span className="control-icon">{icon}</span>
+      <div>
+        <h2 className="text-sm font-semibold text-stone-100">{title}</h2>
+        <p className="mt-1 text-xs leading-5 text-stone-500">{copy}</p>
+      </div>
+    </article>
+  );
+}
