@@ -10,6 +10,7 @@ const ACTIVE_LIBRARY_KEY = 'active-library';
 const MAX_ARCHIVE_FILES = 5000;
 const MAX_EXTRACTED_BYTES = 900 * 1024 * 1024;
 const ZIP_CHUNK_SIZE = 1024 * 1024;
+const STORAGE_CHUNK_SIZE = 4 * 1024 * 1024;
 const ZIP_END_RECORD_SIZE = 22;
 const ZIP_MAX_COMMENT_SIZE = 0xffff;
 
@@ -39,6 +40,9 @@ type CdFileRecord = {
   libraryId: string;
   path: string;
   size: number;
+  fileSize: number;
+  chunkIndex: number;
+  chunkCount: number;
   blob: Blob;
 };
 
@@ -357,14 +361,53 @@ const extractZipEntry = async (
   return new Blob(chunks, { type: 'application/octet-stream' });
 };
 
-const putFile = async (record: CdFileRecord) => {
+const putFileChunk = async (record: CdFileRecord) => {
   const database = await openDatabase();
   try {
     const transaction = database.transaction(FILE_STORE, 'readwrite');
-    transaction.objectStore(FILE_STORE).put(record);
-    await transactionDone(transaction);
+    const request = transaction.objectStore(FILE_STORE).put(record);
+    await Promise.all([requestResult(request), transactionDone(transaction)]);
   } finally {
     database.close();
+  }
+};
+
+const putFile = async (
+  libraryId: string,
+  path: string,
+  size: number,
+  blob: Blob,
+  onChunk?: (chunkIndex: number, chunkCount: number) => void,
+) => {
+  const chunkCount = Math.max(1, Math.ceil(size / STORAGE_CHUNK_SIZE));
+  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    const start = chunkIndex * STORAGE_CHUNK_SIZE;
+    const chunk = blob.slice(start, Math.min(size, start + STORAGE_CHUNK_SIZE));
+    try {
+      await putFileChunk({
+        key: `${libraryId}:${path}:${String(chunkIndex).padStart(5, '0')}`,
+        libraryId,
+        path,
+        size: chunk.size,
+        fileSize: size,
+        chunkIndex,
+        chunkCount,
+        blob: chunk,
+      });
+    } catch (error) {
+      const detail =
+        error instanceof DOMException
+          ? `${error.name}: ${error.message}`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      throw new Error(
+        `Could not save ${path} (part ${chunkIndex + 1} of ${chunkCount}). ${detail}`,
+        { cause: error },
+      );
+    }
+    onChunk?.(chunkIndex, chunkCount);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
   }
 };
 
@@ -538,13 +581,7 @@ export async function importCdFolder(files: FileList, options: ImportOptions) {
         percent: Math.round(((index + 1) / selected.length) * 92),
         detail: `Copying CD file ${index + 1} of ${selected.length}…`,
       });
-      await putFile({
-        key: `${libraryId}:${path}`,
-        libraryId,
-        path,
-        size,
-        blob: file,
-      });
+      await putFile(libraryId, path, size, file);
       records.push({ path, size });
     }
 
@@ -608,13 +645,19 @@ export async function importCdZip(file: File, options: ImportOptions) {
         percent: 86 + Math.round(((index + 1) / selected.length) * 7),
         detail: `Saving CD file ${index + 1} of ${selected.length}…`,
       });
-      await putFile({
-        key: `${libraryId}:${entry.path}`,
+      await putFile(
         libraryId,
-        path: entry.path,
-        size: entry.size,
+        entry.path,
+        entry.size,
         blob,
-      });
+        (chunkIndex, chunkCount) => {
+          options.onProgress?.({
+            phase: 'saving',
+            percent: 86 + Math.round(((index + 1) / selected.length) * 7),
+            detail: `Saving CD file ${index + 1} of ${selected.length} · part ${chunkIndex + 1}/${chunkCount}…`,
+          });
+        },
+      );
       records.push({ path: entry.path, size: entry.size });
     }
 
