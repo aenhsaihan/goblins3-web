@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const PLAYER_URL =
-  '/player.html?build=11#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
+  '/player.html?build=12#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 
 type PlayerMessage = {
   source?: string;
@@ -270,7 +270,7 @@ export default function Home() {
           <ControlCard
             icon={<MousePointer2 />}
             title="Direct mouse touch"
-            copy="Tap or drag normally. In wide rooms, hold the left or right edge arrow for continuous camera panning."
+            copy="Tap or drag normally. In wide rooms, tap an edge arrow once for a full camera pan in that direction."
           />
           <ControlCard
             icon={<Hand />}

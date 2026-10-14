@@ -6,12 +6,12 @@ A mobile-first wrapper around the real English DOS demo of **Goblins Quest 3**, 
 
 - Real Goblins Quest 3 demo; no mock game screen
 - Direct mouse touch: tap to click, drag to move the pointer, and two-finger tap for ScummVM's native right-click
-- Hold-to-pan edge controls generate the continuous mouse movement Goblins 3 requires to scroll wide rooms in either direction
+- One-tap edge controls generate a complete burst of the continuous mouse movement Goblins 3 requires to scroll wide rooms in either direction
 - Dedicated Sound and Fullscreen controls; removed synthetic right-click controls that iOS does not deliver to ScummVM
 - Native fullscreen where available, a visible-viewport fallback, and standalone Home Screen mode for iPhone
 - Standalone landscape mode removes the decorative cabinet bar and the redundant Exit control
 - Responsive landscape mode, repeated orientation realignment, and reachable safe-area edges for wide-room panning
-- ScummVM IDBFS persistence for configuration and save data
+- ScummVM IDBFS persistence for configuration and save data under its browser-persisted home directory
 - ScummVM startup support files served locally, including range requests used by iOS Safari
 - Game data streamed from the ScummVM community demo mirror rather than bundled
 

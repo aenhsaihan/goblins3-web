@@ -107,8 +107,8 @@
     </div>
     <div id="rotate-tip">Rotate your phone for the full view</div>
     <div id="pan-controls" aria-label="Camera pan controls">
-      <button class="pan-control" id="pan-left" type="button" aria-label="Hold to pan camera left">‹</button>
-      <button class="pan-control" id="pan-right" type="button" aria-label="Hold to pan camera right">›</button>
+      <button class="pan-control" id="pan-left" type="button" aria-label="Tap to pan camera left">‹</button>
+      <button class="pan-control" id="pan-right" type="button" aria-label="Tap to pan camera right">›</button>
     </div>
     <div id="controls" aria-label="Game controls">
       <button class="control" id="sound" type="button">Sound</button>
@@ -126,6 +126,7 @@
         let lastPointer = { x: innerWidth / 2, y: innerHeight / 2 };
         let playerReady = false;
         let panTimer = 0;
+        let panStopTimer = 0;
         let panDirection = 0;
         let panTick = 0;
         const demoDirectory = '/games/gob3-dos-demo-en';
@@ -138,7 +139,7 @@ versioninfo=2.10.0git
 always_run_fallback_detection_extern=false
 gui_browser_native=false
 music_driver=adlib
-savepath=/data
+savepath=/home/web_user
 touch_mode_menus=mouse
 touch_mode_2d_games=mouse
 touch_mode_3d_games=mouse
@@ -216,19 +217,33 @@ onscreen_control=false
           if (!playerReady || !panDirection) return;
 
           const rect = canvas.getBoundingClientRect();
-          const edgeWobble = panTick % 2;
-          const x = panDirection < 0
-            ? rect.left + edgeWobble
-            : rect.right - 1 - edgeWobble;
-          const y = rect.top + (rect.height * 0.36);
+          // Goblins 3 only scrolls left when its logical mouse X is exactly
+          // zero. ScummVM letterboxes its 4:3 game surface inside the wider
+          // canvas, so the true game edge is not the canvas element's edge.
+          const gameAspect = 4 / 3;
+          const surfaceWidth = Math.min(canvas.width, canvas.height * gameAspect);
+          const surfaceLeft = rect.left
+            + ((canvas.width - surfaceWidth) / 2) * (rect.width / canvas.width);
+          const surfaceRight = surfaceLeft
+            + surfaceWidth * (rect.width / canvas.width);
+          const innerInset = Math.min(48, rect.width * 0.08);
+          const innerX = panDirection < 0
+            ? surfaceLeft + innerInset
+            : surfaceRight - 1 - innerInset;
+          const edgeX = panDirection < 0
+            ? surfaceLeft
+            : surfaceRight - 1;
+          const atEdge = panTick % 2 === 1;
+          const x = atEdge ? edgeX : innerX;
+          const y = rect.top + (rect.height * 0.36) + (panTick % 2 ? 8 : -8);
           const pointerEvent = {
             pointerType: 'mouse',
             pointerId: 773,
             button: -1,
             buttons: 0,
             type: 'pointermove',
-            movementX: panDirection * 2,
-            movementY: 0,
+            movementX: atEdge ? panDirection * innerInset : -panDirection * innerInset,
+            movementY: panTick % 2 ? 16 : -16,
             clientX: x,
             clientY: y,
           };
@@ -249,7 +264,9 @@ onscreen_control=false
 
         const stopPan = () => {
           if (panTimer) window.clearInterval(panTimer);
+          if (panStopTimer) window.clearTimeout(panStopTimer);
           panTimer = 0;
+          panStopTimer = 0;
           panDirection = 0;
           document.querySelectorAll('.pan-control').forEach((button) => {
             button.classList.remove('is-active');
@@ -266,9 +283,12 @@ onscreen_control=false
           panTick = 0;
           event.currentTarget.classList.add('is-active');
           event.currentTarget.setAttribute('aria-pressed', 'true');
-          event.currentTarget.setPointerCapture?.(event.pointerId);
           sendPanPulse();
-          panTimer = window.setInterval(sendPanPulse, 34);
+          panTimer = window.setInterval(sendPanPulse, 24);
+          // A tap launches a complete pan burst. This deliberately survives
+          // iOS pointerup/pointercancel, which can arrive immediately after a
+          // button press and previously stopped the loop after one pulse.
+          panStopTimer = window.setTimeout(stopPan, 1600);
         };
 
         document.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -299,8 +319,7 @@ onscreen_control=false
 
         document.getElementById('pan-left').addEventListener('pointerdown', (event) => startPan(-1, event));
         document.getElementById('pan-right').addEventListener('pointerdown', (event) => startPan(1, event));
-        document.addEventListener('pointerup', stopPan, true);
-        document.addEventListener('pointercancel', stopPan, true);
+        canvas.addEventListener('pointerdown', stopPan, true);
         document.addEventListener('visibilitychange', () => {
           if (document.hidden) stopPan();
         });
