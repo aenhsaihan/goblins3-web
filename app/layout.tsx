@@ -17,6 +17,15 @@ export const metadata: Metadata = {
   title: 'Goblins 3 Web — Play the DOS demo',
   description:
     'Play the real Goblins Quest 3 DOS demo in a mobile browser with ScummVM WebAssembly and touch controls.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Goblins 3',
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
   openGraph: {
     title: 'Goblins 3 Web — Play the DOS demo',
     description:

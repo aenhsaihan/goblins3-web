@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const PLAYER_URL =
-  '/player.html?build=9#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
+  '/player.html?build=10a#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 
 type PlayerMessage = {
   source?: string;
@@ -96,32 +96,62 @@ export default function Home() {
   }, [expanded]);
 
   useEffect(() => {
-    const settleViewport = () => {
+    const timers = new Set<number>();
+
+    const syncViewport = () => {
+      const viewport = window.visualViewport;
+      const width = Math.round(viewport?.width ?? window.innerWidth);
+      const height = Math.round(viewport?.height ?? window.innerHeight);
+      const root = document.documentElement;
+
+      root.style.setProperty('--visible-width', `${width}px`);
+      root.style.setProperty('--visible-height', `${height}px`);
+
       if (window.matchMedia('(orientation: landscape)').matches || expandedRef.current) {
         window.scrollTo(0, 0);
       }
-      window.setTimeout(() => {
-        frameRef.current?.contentWindow?.postMessage(
-          { source: 'goblins3-shell', type: 'viewport-change' },
-          window.location.origin,
-        );
-      }, 180);
+
+      frameRef.current?.contentWindow?.postMessage(
+        { source: 'goblins3-shell', type: 'viewport-change' },
+        window.location.origin,
+      );
     };
 
-    const onFullscreenChange = () => {
-      if (!document.fullscreenElement && nativeFullscreenRef.current) {
-        nativeFullscreenRef.current = false;
-        expandedRef.current = false;
-        setExpanded(false);
+    const settleViewport = () => {
+      for (const delay of [0, 120, 360, 760]) {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer);
+          syncViewport();
+        }, delay);
+        timers.add(timer);
       }
     };
 
+    const onFullscreenChange = () => {
+      if (document.fullscreenElement) {
+        nativeFullscreenRef.current = true;
+        if (!expandedRef.current) {
+          expandedRef.current = true;
+          setExpanded(true);
+        }
+      } else {
+        nativeFullscreenRef.current = false;
+      }
+      settleViewport();
+    };
+
+    settleViewport();
     window.addEventListener('orientationchange', settleViewport);
+    window.addEventListener('resize', settleViewport);
     window.visualViewport?.addEventListener('resize', settleViewport);
+    window.visualViewport?.addEventListener('scroll', settleViewport);
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => {
+      for (const timer of timers) window.clearTimeout(timer);
       window.removeEventListener('orientationchange', settleViewport);
+      window.removeEventListener('resize', settleViewport);
       window.visualViewport?.removeEventListener('resize', settleViewport);
+      window.visualViewport?.removeEventListener('scroll', settleViewport);
       document.removeEventListener('fullscreenchange', onFullscreenChange);
     };
   }, []);
@@ -221,12 +251,12 @@ export default function Home() {
           <ControlCard
             icon={<Hand />}
             title="Inventory / right-click"
-            copy="Double-tap, hold for half a second, use two fingers, or tap the Inventory control."
+            copy="Tap with two fingers. This uses ScummVM’s native right-click path and is the reliable iPhone gesture."
           />
           <ControlCard
             icon={<RotateCw />}
             title="Full-screen landscape"
-            copy="Turn your phone sideways. The game now fills and stays pinned to the visible screen."
+            copy="Rotate first, then tap Fullscreen. For toolbar-free iPhone play, use Safari’s Add to Home Screen once."
           />
         </div>
 
