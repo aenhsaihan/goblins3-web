@@ -90,12 +90,25 @@
         let holdTimer = 0;
         let holdStart = null;
         let holdTriggered = false;
+        let doubleTapPending = false;
+        let lastTap = { time: 0, x: 0, y: 0 };
         let playerReady = false;
         const demoDirectory = '/games/gob3-dos-demo-en';
         const demoFiles = [
           '2.exe', '2.txt', 'all.ask', 'cat.inf', 'cd.cfg', 'gob3.exe',
           'imd.itk', 'imd.ltk', 'intro.stk', 'mdo.cfg', 'mdo.def', 'setup.exe'
         ];
+        const fixedConfig = `[scummvm]
+versioninfo=2.10.0git
+always_run_fallback_detection_extern=false
+gui_browser_native=false
+music_driver=adlib
+savepath=/data
+touch_mode_menus=mouse
+touch_mode_2d_games=mouse
+touch_mode_3d_games=mouse
+onscreen_control=false
+`;
         let lastHttpFailure = '';
 
         // Keep every demo-data request on this origin. This avoids mobile
@@ -117,7 +130,7 @@
           }
 
           if (url.origin === location.origin && url.pathname === '/data/index.json') {
-            url.searchParams.set('site-data', '5');
+            url.searchParams.set('site-data', '9');
             return nativeFetch(url.href, { ...init, cache: 'reload' });
           }
 
@@ -182,10 +195,25 @@
           if (event.touches.length !== 1) {
             clearTimeout(holdTimer);
             holdStart = null;
+            doubleTapPending = false;
             return;
           }
           const touch = event.touches[0];
           lastPointer = { x: touch.clientX, y: touch.clientY };
+          const now = performance.now();
+          if (
+            now - lastTap.time < 340 &&
+            Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) < 28
+          ) {
+            doubleTapPending = true;
+            clearTimeout(holdTimer);
+            holdStart = null;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+          }
+
+          doubleTapPending = false;
           holdStart = { x: touch.clientX, y: touch.clientY };
           holdTriggered = false;
           clearTimeout(holdTimer);
@@ -195,9 +223,14 @@
             rightClick(holdStart.x, holdStart.y);
             if (navigator.vibrate) navigator.vibrate(20);
           }, 520);
-        }, { passive: true, capture: true });
+        }, { passive: false, capture: true });
 
         canvas.addEventListener('touchmove', (event) => {
+          if (doubleTapPending) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+          }
           if (!holdStart || event.touches.length !== 1) return;
           const touch = event.touches[0];
           lastPointer = { x: touch.clientX, y: touch.clientY };
@@ -205,31 +238,54 @@
             clearTimeout(holdTimer);
             holdStart = null;
           }
-        }, { passive: true, capture: true });
+        }, { passive: false, capture: true });
 
         const endHold = (event) => {
           clearTimeout(holdTimer);
-          holdStart = null;
-          if (holdTriggered) {
+          if (doubleTapPending) {
+            doubleTapPending = false;
+            lastTap.time = 0;
             event.preventDefault();
             event.stopImmediatePropagation();
-            holdTriggered = false;
+            rightClick();
+            return;
           }
+
+          const completedTap = !holdTriggered && holdStart;
+          if (completedTap) {
+            lastTap = { time: performance.now(), x: lastPointer.x, y: lastPointer.y };
+          }
+          holdStart = null;
+          holdTriggered = false;
         };
         canvas.addEventListener('touchend', endHold, { passive: false, capture: true });
-        canvas.addEventListener('touchcancel', endHold, { passive: false, capture: true });
+        canvas.addEventListener('touchcancel', () => {
+          clearTimeout(holdTimer);
+          holdStart = null;
+          holdTriggered = false;
+          doubleTapPending = false;
+        }, { passive: true, capture: true });
 
         document.getElementById('inventory').addEventListener('click', () => rightClick());
         document.getElementById('sound').addEventListener('click', unlockAudio);
-        document.getElementById('fullscreen').addEventListener('click', async () => {
-          await document.documentElement.requestFullscreen?.().catch(() => {});
-          await screen.orientation?.lock?.('landscape')?.catch(() => {});
+        const fullscreenButton = document.getElementById('fullscreen');
+        fullscreenButton.addEventListener('click', async () => {
+          if (window.parent !== window) {
+            notify('toggle-fullscreen', '');
+          } else {
+            await document.documentElement.requestFullscreen?.().catch(() => {});
+          }
           unlockAudio();
         });
 
         addEventListener('message', (event) => {
           if (event.origin !== location.origin || event.data?.source !== 'goblins3-shell') return;
-          if (event.data.type === 'fullscreen') document.getElementById('fullscreen').click();
+          if (event.data.type === 'fullscreen-state') {
+            fullscreenButton.textContent = event.data.expanded ? 'Exit' : 'Full screen';
+          }
+          if (event.data.type === 'viewport-change') {
+            setTimeout(() => dispatchEvent(new Event('resize')), 50);
+          }
         });
 
         window.Module = {
@@ -238,6 +294,7 @@
             addRunDependency(dependency);
 
             (async () => {
+              FS.writeFile('/goblins3-web.ini', new TextEncoder().encode(fixedConfig));
               FS.mkdirTree(demoDirectory);
 
               for (let index = 0; index < demoFiles.length; index += 1) {

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BadgeCheck,
   Expand,
   Gamepad2,
   Hand,
+  Minimize2,
   MousePointer2,
   RotateCw,
   ShieldCheck,
@@ -15,18 +16,51 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const PLAYER_URL =
-  '/player.html?build=8#--music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
+  '/player.html?build=9#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 
 type PlayerMessage = {
   source?: string;
-  type?: 'ready' | 'status';
+  type?: 'ready' | 'status' | 'toggle-fullscreen';
   text?: string;
 };
 
 export default function Home() {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const cabinetRef = useRef<HTMLDivElement>(null);
+  const expandedRef = useRef(false);
+  const nativeFullscreenRef = useRef(false);
   const [ready, setReady] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState('Preparing the ScummVM engine…');
+
+  const toggleFullscreen = useCallback(async (tryNativeFullscreen: boolean) => {
+    const next = !expandedRef.current;
+    expandedRef.current = next;
+    setExpanded(next);
+
+    if (!next) {
+      nativeFullscreenRef.current = false;
+      if (document.fullscreenElement) {
+        await document.exitFullscreen().catch(() => {});
+      }
+      return;
+    }
+
+    window.scrollTo(0, 0);
+    if (tryNativeFullscreen && cabinetRef.current?.requestFullscreen) {
+      try {
+        await cabinetRef.current.requestFullscreen();
+        nativeFullscreenRef.current = true;
+      } catch {
+        nativeFullscreenRef.current = false;
+      }
+    }
+
+    const orientation = screen.orientation as ScreenOrientation & {
+      lock?: (value: OrientationLockType) => Promise<void>;
+    };
+    await orientation.lock?.('landscape').catch(() => {});
+  }, []);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent<PlayerMessage>) => {
@@ -38,26 +72,59 @@ export default function Home() {
         setStatus('Demo ready');
       } else if (event.data.type === 'status' && event.data.text) {
         setStatus(event.data.text);
+      } else if (event.data.type === 'toggle-fullscreen') {
+        void toggleFullscreen(false);
       }
     };
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
+  }, [toggleFullscreen]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('game-expanded', expanded);
+    document.body.classList.toggle('game-expanded', expanded);
+    frameRef.current?.contentWindow?.postMessage(
+      { source: 'goblins3-shell', type: 'fullscreen-state', expanded },
+      window.location.origin,
+    );
+
+    return () => {
+      document.documentElement.classList.remove('game-expanded');
+      document.body.classList.remove('game-expanded');
+    };
+  }, [expanded]);
+
+  useEffect(() => {
+    const settleViewport = () => {
+      if (window.matchMedia('(orientation: landscape)').matches || expandedRef.current) {
+        window.scrollTo(0, 0);
+      }
+      window.setTimeout(() => {
+        frameRef.current?.contentWindow?.postMessage(
+          { source: 'goblins3-shell', type: 'viewport-change' },
+          window.location.origin,
+        );
+      }, 180);
+    };
+
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement && nativeFullscreenRef.current) {
+        nativeFullscreenRef.current = false;
+        expandedRef.current = false;
+        setExpanded(false);
+      }
+    };
+
+    window.addEventListener('orientationchange', settleViewport);
+    window.visualViewport?.addEventListener('resize', settleViewport);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => {
+      window.removeEventListener('orientationchange', settleViewport);
+      window.visualViewport?.removeEventListener('resize', settleViewport);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+    };
   }, []);
-
-  const enterFullscreen = async () => {
-    const frame = frameRef.current;
-    if (!frame) return;
-
-    try {
-      await frame.requestFullscreen();
-    } catch {
-      frame.contentWindow?.postMessage(
-        { source: 'goblins3-shell', type: 'fullscreen' },
-        window.location.origin,
-      );
-    }
-  };
 
   return (
     <main className="min-h-svh overflow-x-hidden bg-background text-foreground">
@@ -98,7 +165,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="cabinet-shell">
+        <div ref={cabinetRef} className={`cabinet-shell ${expanded ? 'is-expanded' : ''}`}>
           <div className="cabinet-bar">
             <div className="flex min-w-0 items-center gap-2">
               <span className="size-2 rounded-full bg-[#ff6b35]" />
@@ -112,12 +179,12 @@ export default function Home() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={enterFullscreen}
+              onClick={() => void toggleFullscreen(true)}
               className="h-7 text-[11px] text-stone-300 hover:bg-white/10 hover:text-white"
               aria-label="Open game fullscreen"
             >
-              <Expand className="size-3.5" />
-              Fullscreen
+              {expanded ? <Minimize2 className="size-3.5" /> : <Expand className="size-3.5" />}
+              {expanded ? 'Exit' : 'Fullscreen'}
             </Button>
           </div>
 
@@ -139,7 +206,7 @@ export default function Home() {
               ref={frameRef}
               title="Playable Goblins Quest 3 DOS demo"
               src={PLAYER_URL}
-              allow="autoplay; fullscreen; gamepad"
+              allow="autoplay; fullscreen"
               className="game-frame"
             />
           </div>
@@ -148,18 +215,18 @@ export default function Home() {
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <ControlCard
             icon={<MousePointer2 />}
-            title="Tap to act"
-            copy="A quick tap is the left mouse button. Drag to guide Blount around the scene."
+            title="Direct mouse touch"
+            copy="Tap where you want to click. Drag across the scene to move the pointer precisely."
           />
           <ControlCard
             icon={<Hand />}
-            title="Hold for inventory"
-            copy="Press and hold for half a second, use two fingers, or tap the Inventory control."
+            title="Inventory / right-click"
+            copy="Double-tap, hold for half a second, use two fingers, or tap the Inventory control."
           />
           <ControlCard
             icon={<RotateCw />}
-            title="Landscape is best"
-            copy="Turn your phone sideways, then use Fullscreen for the original 320×200 view."
+            title="Full-screen landscape"
+            copy="Turn your phone sideways. The game now fills and stays pinned to the visible screen."
           />
         </div>
 

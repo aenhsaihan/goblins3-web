@@ -119,6 +119,47 @@
     inset 0 1px rgb(255 255 255 / 0.05);
 }
 
+html.game-expanded,
+html.game-expanded body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.cabinet-shell.is-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 100svh;
+  border: 0;
+  border-radius: 0;
+}
+
+.cabinet-shell.is-expanded .cabinet-bar {
+  position: absolute;
+  z-index: 20;
+  top: max(0.35rem, env(safe-area-inset-top));
+  right: max(0.35rem, env(safe-area-inset-right));
+  left: max(0.35rem, env(safe-area-inset-left));
+  height: 2.1rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 0.4rem;
+  background: rgb(10 9 8 / 0.76);
+  backdrop-filter: blur(12px);
+}
+
+.cabinet-shell.is-expanded .game-frame-wrap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+
 .cabinet-bar {
   display: flex;
   height: 2.5rem;
@@ -186,6 +227,22 @@
 }
 
 @media (orientation: landscape) and (max-height: 760px) {
+  html,
+  body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  main {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
   header {
     display: none !important;
   }
@@ -200,6 +257,11 @@
   }
 
   .cabinet-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    width: 100vw;
+    height: 100dvh;
     min-height: 100svh;
     border: 0;
     border-radius: 0;
@@ -219,8 +281,10 @@
   }
 
   .game-frame-wrap {
+    position: absolute;
+    inset: 0;
     width: 100vw;
-    height: 100svh;
+    height: 100%;
     min-height: 0;
     aspect-ratio: auto;
   }
