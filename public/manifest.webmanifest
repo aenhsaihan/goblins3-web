@@ -1,7 +1,7 @@
 {
   "name": "Goblins 3 Web",
   "short_name": "Goblins 3",
-  "description": "Play the real Goblins Quest 3 DOS demo with mobile touch controls.",
+  "description": "Play your Goblins Quest 3 DOS CD edition locally with mobile touch controls.",
   "start_url": "/?source=home-screen",
   "scope": "/",
   "display": "standalone",

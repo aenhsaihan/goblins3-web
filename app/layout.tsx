@@ -14,9 +14,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Goblins 3 Web — Play the DOS demo',
+  title: 'Goblins 3 Web — Play the DOS CD edition',
   description:
-    'Play the real Goblins Quest 3 DOS demo in a mobile browser with ScummVM WebAssembly and touch controls.',
+    'Play your Goblins Quest 3 DOS CD edition locally in a mobile browser, or launch the official demo, with ScummVM WebAssembly and touch controls.',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
@@ -27,9 +27,9 @@ export const metadata: Metadata = {
     'mobile-web-app-capable': 'yes',
   },
   openGraph: {
-    title: 'Goblins 3 Web — Play the DOS demo',
+    title: 'Goblins 3 Web — Play the DOS CD edition',
     description:
-      'The real 1993 DOS demo, running in your browser with touch controls.',
+      'Bring your legally owned DOS CD files and play locally in your browser with touch controls.',
     type: 'website',
     images: [
       {
@@ -42,9 +42,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Goblins 3 Web — Play the DOS demo',
+    title: 'Goblins 3 Web — Play the DOS CD edition',
     description:
-      'The real 1993 DOS demo, running in your browser with touch controls.',
+      'Bring your legally owned DOS CD files and play locally in your browser with touch controls.',
     images: ['/og.png'],
   },
 };

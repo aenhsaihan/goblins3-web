@@ -1,10 +1,14 @@
 # Goblins 3 Web
 
-A mobile-first wrapper around the real English DOS demo of **Goblins Quest 3**, running in ScummVM WebAssembly.
+A mobile-first ScummVM WebAssembly player for the **Goblins Quest 3 DOS CD edition**, with the official English DOS demo available as a no-setup fallback.
 
 ## What works
 
 - Real Goblins Quest 3 demo; no mock game screen
+- Local-only full DOS CD import from a ZIP on iPhone or an extracted folder on desktop
+- CD validation using ScummVM's Goblins 3 CD data markers (`intro.stk` and `mus_gob3.lic`)
+- Imported CD files persist in IndexedDB and are reconstructed in ScummVM's in-memory filesystem at launch; they are never sent to the server
+- Safe replacement: a bad import is rejected without removing the previously working local CD library
 - Direct mouse touch: tap to click, drag to move the pointer, and two-finger tap for ScummVM's native right-click
 - One-tap edge controls generate a complete burst of the continuous mouse movement Goblins 3 requires to scroll wide rooms in either direction
 - Dedicated Sound and Fullscreen controls; removed synthetic right-click controls that iOS does not deliver to ScummVM
@@ -13,7 +17,7 @@ A mobile-first wrapper around the real English DOS demo of **Goblins Quest 3**, 
 - Responsive landscape mode, repeated orientation realignment, and reachable safe-area edges for wide-room panning
 - ScummVM IDBFS persistence for configuration and save data under its browser-persisted home directory
 - ScummVM startup support files served locally, including range requests used by iOS Safari
-- Game data streamed from the ScummVM community demo mirror rather than bundled
+- Demo data streamed from the ScummVM community demo mirror rather than bundled
 
 ## Local development
 

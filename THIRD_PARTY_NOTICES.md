@@ -10,6 +10,13 @@ This project loads a ScummVM WebAssembly build through a narrow same-origin prox
 
 The runtime proxy exposes only the main ScummVM WebAssembly files. The bundled support files were downloaded from the integration build's public data directory and correspond to the source revisions above.
 
+## fflate
+
+The local CD importer uses fflate 0.7.5 to extract user-selected ZIP archives in the browser.
+
+- Source: https://github.com/101arrowz/fflate
+- License: MIT
+
 ## Goblins Quest 3 demo data
 
 The game archive is **not** included in this repository or deployment bundle. At runtime, ScummVM streams the English DOS demo from the public ScummVM community web-demo data mirror.

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
     <meta name="theme-color" content="#000000" />
-    <title>Goblins Quest 3 — DOS demo</title>
+    <title>Goblins Quest 3 — browser player</title>
     <style>
       :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       * {
@@ -129,7 +129,10 @@
         let panStopTimer = 0;
         let panDirection = 0;
         let panTick = 0;
+        const edition = new URLSearchParams(location.search).get('edition') === 'cd' ? 'cd' : 'demo';
+        const isCdEdition = edition === 'cd';
         const demoDirectory = '/games/gob3-dos-demo-en';
+        const cdDirectory = '/games/gob3-cd';
         const demoFiles = [
           '2.exe', '2.txt', 'all.ask', 'cat.inf', 'cd.cfg', 'gob3.exe',
           'imd.itk', 'imd.ltk', 'intro.stk', 'mdo.cfg', 'mdo.def', 'setup.exe'
@@ -154,20 +157,51 @@ onscreen_control=false
         const nativeFetch = window.fetch.bind(window);
         const demoMirrorOrigin = 'https://scummvm-data.kuendig.io';
         const demoMirrorPath = '/gob3-dos-demo-en/';
+        const publishedGameOrigin = 'https://goblins-3-web.blackbrush12.chatgpt.site';
         window.fetch = (input, init) => {
-          if (typeof input !== 'string') return nativeFetch(input, init);
+          const inputUrl = typeof input === 'string'
+            ? input
+            : input instanceof Request
+              ? input.url
+              : null;
+          if (!inputUrl) return nativeFetch(input, init);
+          const fetchRewritten = (url) =>
+            typeof input === 'string'
+              ? nativeFetch(url.href, init)
+              : nativeFetch(new Request(url.href, input), init);
 
-          const url = new URL(input, location.href);
+          const url = new URL(inputUrl, location.href);
+          if (url.origin === publishedGameOrigin && url.pathname.startsWith('/game-v5/')) {
+            url.protocol = location.protocol;
+            url.host = location.host;
+            return fetchRewritten(url);
+          }
+
           if (url.origin === demoMirrorOrigin && url.pathname.startsWith(demoMirrorPath)) {
             url.protocol = location.protocol;
             url.host = location.host;
             url.pathname = `/game-v5${url.pathname}`;
-            return nativeFetch(url.href, init);
+            return fetchRewritten(url);
           }
 
           if (url.origin === location.origin && url.pathname === '/data/index.json') {
-            url.searchParams.set('site-data', '9');
-            return nativeFetch(url.href, { ...init, cache: 'reload' });
+            url.searchParams.set('site-data', '13');
+            const request = typeof input === 'string'
+              ? nativeFetch(url.href, { ...init, cache: 'reload' })
+              : nativeFetch(new Request(url.href, input), { ...init, cache: 'reload' });
+            return request.then(async (response) => {
+              if (!response.ok) return response;
+              const dataIndex = await response.json();
+              if (dataIndex.games) dataIndex.games.baseUrl = `${location.origin}/game-v5`;
+              const headers = new Headers(response.headers);
+              headers.delete('content-length');
+              headers.delete('content-encoding');
+              return new Response(JSON.stringify(dataIndex), {
+                status: response.status,
+                statusText: response.statusText,
+                headers,
+              });
+            });
           }
 
           return nativeFetch(input, init);
@@ -200,9 +234,78 @@ onscreen_control=false
             status.classList.add('hidden');
             document.body.classList.add('ready');
             document.getElementById('download-modal').style.display = 'none';
-            notify('ready', 'Demo ready');
-            document.title = 'Goblins Quest 3 — playable DOS demo';
+            notify('ready', isCdEdition ? 'CD edition ready' : 'Demo ready');
+            document.title = isCdEdition
+              ? 'Goblins Quest 3 — DOS CD edition'
+              : 'Goblins Quest 3 — playable DOS demo';
           }, 500);
+        };
+
+        const requestResult = (request) => new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error('Browser storage request failed.'));
+        });
+
+        const openCdDatabase = () => new Promise((resolve, reject) => {
+          const request = indexedDB.open('goblins3-cd-library', 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error('Could not open local CD storage.'));
+        });
+
+        const loadCdFiles = async () => {
+          const database = await openCdDatabase();
+          let metadata;
+          let records;
+          try {
+            const metaTransaction = database.transaction('meta', 'readonly');
+            metadata = await requestResult(
+              metaTransaction.objectStore('meta').get('active-library'),
+            );
+            if (!metadata) {
+              throw new Error('No CD edition is stored in this browser. Return to the page and import it first.');
+            }
+
+            const fileTransaction = database.transaction('files', 'readonly');
+            records = await requestResult(
+              fileTransaction
+                .objectStore('files')
+                .index('libraryId')
+                .getAll(IDBKeyRange.only(metadata.libraryId)),
+            );
+          } finally {
+            database.close();
+          }
+
+          const rootPrefix = metadata.root ? `${metadata.root}/` : '';
+          const cdRecords = records
+            .filter((record) => !rootPrefix || record.path.startsWith(rootPrefix))
+            .sort((a, b) => a.path.localeCompare(b.path));
+
+          if (!cdRecords.length) {
+            throw new Error('The stored CD library is empty. Please import it again.');
+          }
+
+          FS.mkdirTree(cdDirectory);
+          let loadedBytes = 0;
+          for (let index = 0; index < cdRecords.length; index += 1) {
+            const record = cdRecords[index];
+            const relativePath = rootPrefix ? record.path.slice(rootPrefix.length) : record.path;
+            if (!relativePath) continue;
+            const slash = relativePath.lastIndexOf('/');
+            if (slash >= 0) FS.mkdirTree(`${cdDirectory}/${relativePath.slice(0, slash)}`);
+
+            const percent = Math.round(((index + 1) / cdRecords.length) * 78) + 10;
+            loadedBytes += record.size;
+            const loadedMb = loadedBytes / (1024 * 1024);
+            statusText.textContent = `Preparing CD files ${index + 1}/${cdRecords.length} · ${loadedMb.toFixed(0)} MB…`;
+            progress.style.width = `${percent}%`;
+            notify('status', `Preparing CD files ${index + 1}/${cdRecords.length}…`);
+            FS.writeFile(
+              `${cdDirectory}/${relativePath}`,
+              new Uint8Array(await record.blob.arrayBuffer()),
+            );
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
         };
 
         const unlockAudio = async () => {
@@ -359,11 +462,18 @@ onscreen_control=false
 
         window.Module = {
           preRun: [() => {
-            const dependency = 'preload-gob3-demo';
+            const dependency = isCdEdition ? 'preload-gob3-cd' : 'preload-gob3-demo';
             addRunDependency(dependency);
 
             (async () => {
               FS.writeFile('/goblins3-web.ini', new TextEncoder().encode(fixedConfig));
+              if (isCdEdition) {
+                statusText.textContent = 'Opening your local CD edition…';
+                notify('status', 'Opening your local CD edition…');
+                await loadCdFiles();
+                return;
+              }
+
               FS.mkdirTree(demoDirectory);
 
               for (let index = 0; index < demoFiles.length; index += 1) {
@@ -387,8 +497,9 @@ onscreen_control=false
               .then(() => removeRunDependency(dependency))
               .catch((error) => {
                 const detail = error instanceof Error ? error.message : String(error);
-                statusText.textContent = `Demo download failed: ${detail}`;
-                notify('status', `Demo download failed: ${detail}`);
+                const prefix = isCdEdition ? 'CD launch failed' : 'Demo download failed';
+                statusText.textContent = `${prefix}: ${detail}`;
+                notify('status', `${prefix}: ${detail}`);
                 console.error('Goblins 3 preload failed:', error);
               });
           }],
