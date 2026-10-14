@@ -31,9 +31,9 @@ import {
 } from '@/lib/cd-library';
 
 const DEMO_PLAYER_URL =
-  '/player.html?build=13-final&edition=demo#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
+  '/player.html?build=14-selective-zip&edition=demo#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 const CD_PLAYER_URL =
-  '/player.html?build=13-final&edition=cd#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
+  '/player.html?build=14-selective-zip&edition=cd#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
 
 type Edition = 'demo' | 'cd';
 

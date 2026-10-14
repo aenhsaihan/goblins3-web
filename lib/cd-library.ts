@@ -1,6 +1,6 @@
 'use client';
 
-import { Unzip, UnzipInflate } from 'fflate';
+import { UnzipInflate } from 'fflate';
 
 const DATABASE_NAME = 'goblins3-cd-library';
 const DATABASE_VERSION = 1;
@@ -9,6 +9,18 @@ const META_STORE = 'meta';
 const ACTIVE_LIBRARY_KEY = 'active-library';
 const MAX_ARCHIVE_FILES = 5000;
 const MAX_EXTRACTED_BYTES = 900 * 1024 * 1024;
+const ZIP_CHUNK_SIZE = 1024 * 1024;
+const ZIP_END_RECORD_SIZE = 22;
+const ZIP_MAX_COMMENT_SIZE = 0xffff;
+
+type ZipEntryDescriptor = {
+  path: string;
+  size: number;
+  compressedSize: number;
+  compression: number;
+  encrypted: boolean;
+  localHeaderOffset: number;
+};
 
 export type CdLibraryMetadata = {
   key: typeof ACTIVE_LIBRARY_KEY;
@@ -105,6 +117,244 @@ const isJunkPath = (path: string) => {
     lower.endsWith('/thumbs.db') ||
     lower === 'thumbs.db'
   );
+};
+
+const isDirectChildOfRoot = (path: string, root: string) => {
+  const prefix = root ? `${root}/` : '';
+  if (!path.toLowerCase().startsWith(prefix.toLowerCase())) return false;
+  const relativePath = path.slice(prefix.length);
+  return Boolean(relativePath) && !relativePath.includes('/');
+};
+
+const selectCdFiles = <T extends { path: string; size: number }>(
+  records: T[],
+) => {
+  const match = identifyCdRoot(records);
+  const selected = records.filter((record) =>
+    isDirectChildOfRoot(record.path, match.root),
+  );
+  const seen = new Set<string>();
+  for (const record of selected) {
+    const lowerPath = record.path.toLowerCase();
+    if (seen.has(lowerPath)) {
+      throw new Error(`This archive contains a duplicate file: ${record.path}`);
+    }
+    seen.add(lowerPath);
+  }
+
+  const selectedBytes = selected.reduce((sum, record) => sum + record.size, 0);
+  if (selectedBytes > MAX_EXTRACTED_BYTES) {
+    throw new Error(
+      'The playable CD files expand beyond the safe 900 MB import limit.',
+    );
+  }
+  return { match, selected, selectedBytes };
+};
+
+const readZipDirectory = async (file: File) => {
+  const tailStart = Math.max(
+    0,
+    file.size - ZIP_END_RECORD_SIZE - ZIP_MAX_COMMENT_SIZE,
+  );
+  const tail = new Uint8Array(await file.slice(tailStart).arrayBuffer());
+  const tailView = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+  let endOffset = -1;
+
+  for (
+    let offset = tail.length - ZIP_END_RECORD_SIZE;
+    offset >= 0;
+    offset -= 1
+  ) {
+    if (tailView.getUint32(offset, true) !== 0x06054b50) continue;
+    const commentLength = tailView.getUint16(offset + 20, true);
+    if (offset + ZIP_END_RECORD_SIZE + commentLength === tail.length) {
+      endOffset = offset;
+      break;
+    }
+  }
+
+  if (endOffset < 0) {
+    throw new Error('This file does not contain a readable ZIP directory.');
+  }
+
+  const diskNumber = tailView.getUint16(endOffset + 4, true);
+  const directoryDisk = tailView.getUint16(endOffset + 6, true);
+  const entriesOnDisk = tailView.getUint16(endOffset + 8, true);
+  const entryCount = tailView.getUint16(endOffset + 10, true);
+  const directorySize = tailView.getUint32(endOffset + 12, true);
+  const directoryOffset = tailView.getUint32(endOffset + 16, true);
+
+  if (diskNumber !== 0 || directoryDisk !== 0 || entriesOnDisk !== entryCount) {
+    throw new Error('Multi-part ZIP archives are not supported.');
+  }
+  if (
+    entryCount === 0xffff ||
+    directorySize === 0xffffffff ||
+    directoryOffset === 0xffffffff
+  ) {
+    throw new Error('ZIP64 archives are not supported on mobile yet.');
+  }
+  if (entryCount > MAX_ARCHIVE_FILES) {
+    throw new Error(
+      'This ZIP contains too many files to be a Goblins 3 CD folder.',
+    );
+  }
+  if (directoryOffset + directorySize > file.size) {
+    throw new Error('The ZIP directory points outside the selected file.');
+  }
+
+  const directory = new Uint8Array(
+    await file
+      .slice(directoryOffset, directoryOffset + directorySize)
+      .arrayBuffer(),
+  );
+  const view = new DataView(
+    directory.buffer,
+    directory.byteOffset,
+    directory.byteLength,
+  );
+  const utf8 = new TextDecoder('utf-8');
+  const entries: ZipEntryDescriptor[] = [];
+  let offset = 0;
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (
+      offset + 46 > directory.length ||
+      view.getUint32(offset, true) !== 0x02014b50
+    ) {
+      throw new Error('The ZIP directory is incomplete or damaged.');
+    }
+
+    const flags = view.getUint16(offset + 8, true);
+    const compression = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const size = view.getUint32(offset + 24, true);
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const nextOffset = offset + 46 + nameLength + extraLength + commentLength;
+    if (nextOffset > directory.length) {
+      throw new Error('The ZIP directory contains a truncated file entry.');
+    }
+    if (
+      compressedSize === 0xffffffff ||
+      size === 0xffffffff ||
+      localHeaderOffset === 0xffffffff
+    ) {
+      throw new Error('ZIP64 file entries are not supported on mobile yet.');
+    }
+
+    const rawName = utf8.decode(
+      directory.subarray(offset + 46, offset + 46 + nameLength),
+    );
+    const path = normalizePath(rawName);
+    if (path && !rawName.endsWith('/') && !isJunkPath(path)) {
+      entries.push({
+        path,
+        size,
+        compressedSize,
+        compression,
+        encrypted: Boolean(flags & 1),
+        localHeaderOffset,
+      });
+    }
+    offset = nextOffset;
+  }
+
+  return entries;
+};
+
+const extractZipEntry = async (
+  file: File,
+  entry: ZipEntryDescriptor,
+  onCompressedBytes: (bytes: number) => void,
+) => {
+  const localHeader = new Uint8Array(
+    await file
+      .slice(entry.localHeaderOffset, entry.localHeaderOffset + 30)
+      .arrayBuffer(),
+  );
+  if (
+    localHeader.length !== 30 ||
+    new DataView(
+      localHeader.buffer,
+      localHeader.byteOffset,
+      localHeader.byteLength,
+    ).getUint32(0, true) !== 0x04034b50
+  ) {
+    throw new Error(`Could not locate ${entry.path} inside the ZIP.`);
+  }
+
+  const localView = new DataView(
+    localHeader.buffer,
+    localHeader.byteOffset,
+    localHeader.byteLength,
+  );
+  const localCompression = localView.getUint16(8, true);
+  const nameLength = localView.getUint16(26, true);
+  const extraLength = localView.getUint16(28, true);
+  if (localCompression !== entry.compression) {
+    throw new Error(`The ZIP metadata for ${entry.path} is inconsistent.`);
+  }
+
+  const dataOffset = entry.localHeaderOffset + 30 + nameLength + extraLength;
+  const dataEnd = dataOffset + entry.compressedSize;
+  if (dataEnd > file.size) {
+    throw new Error(`${entry.path} is truncated inside the ZIP.`);
+  }
+
+  const chunks: ArrayBuffer[] = [];
+  let extractedSize = 0;
+  let extractionError: Error | null = null;
+  let finished = entry.compression === 0 && entry.compressedSize === 0;
+  const receive = (
+    error: Error | null,
+    data: Uint8Array | null,
+    final: boolean,
+  ) => {
+    if (error) {
+      extractionError = error;
+      return;
+    }
+    if (data?.length) {
+      extractedSize += data.length;
+      if (extractedSize > entry.size || extractedSize > MAX_EXTRACTED_BYTES) {
+        extractionError = new Error(
+          `${entry.path} expands beyond its ZIP size.`,
+        );
+        return;
+      }
+      const copy = new Uint8Array(data.length);
+      copy.set(data);
+      chunks.push(copy.buffer);
+    }
+    if (final) finished = true;
+  };
+
+  const inflater = entry.compression === 8 ? new UnzipInflate() : null;
+  if (inflater) inflater.ondata = receive;
+
+  for (let offset = dataOffset; offset < dataEnd; offset += ZIP_CHUNK_SIZE) {
+    const end = Math.min(dataEnd, offset + ZIP_CHUNK_SIZE);
+    const data = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+    const final = end === dataEnd;
+
+    if (inflater) {
+      inflater.push(data, final);
+    } else {
+      receive(null, data, final);
+    }
+    if (extractionError) throw extractionError;
+    onCompressedBytes(data.length);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  if (extractionError) throw extractionError;
+  if (!finished || extractedSize !== entry.size) {
+    throw new Error(`${entry.path} did not extract to its expected size.`);
+  }
+  return new Blob(chunks, { type: 'application/octet-stream' });
 };
 
 const putFile = async (record: CdFileRecord) => {
@@ -266,26 +516,36 @@ export async function importCdFolder(files: FileList, options: ImportOptions) {
 
   try {
     await navigator.storage?.persist?.().catch(() => false);
-    const usableFiles = Array.from(files).filter((file) => file.size > 0);
-    for (let index = 0; index < usableFiles.length; index += 1) {
-      const file = usableFiles[index];
-      const directoryFile = file as File & { webkitRelativePath?: string };
-      const path = normalizePath(directoryFile.webkitRelativePath || file.name);
-      if (isJunkPath(path)) continue;
+    const usableFiles = Array.from(files)
+      .map((file) => {
+        const directoryFile = file as File & { webkitRelativePath?: string };
+        return {
+          file,
+          path: normalizePath(
+            directoryFile.webkitRelativePath || directoryFile.name,
+          ),
+          size: file.size,
+        };
+      })
+      .filter((record) => record.size > 0 && !isJunkPath(record.path));
+    const { selected } = selectCdFiles(usableFiles);
+
+    for (let index = 0; index < selected.length; index += 1) {
+      const { file, path, size } = selected[index];
 
       options.onProgress?.({
         phase: 'saving',
-        percent: Math.round(((index + 1) / usableFiles.length) * 92),
-        detail: `Copying ${index + 1} of ${usableFiles.length} files…`,
+        percent: Math.round(((index + 1) / selected.length) * 92),
+        detail: `Copying CD file ${index + 1} of ${selected.length}…`,
       });
       await putFile({
         key: `${libraryId}:${path}`,
         libraryId,
         path,
-        size: file.size,
+        size,
         blob: file,
       });
-      records.push({ path, size: file.size });
+      records.push({ path, size });
     }
 
     options.onProgress?.({
@@ -303,85 +563,60 @@ export async function importCdFolder(files: FileList, options: ImportOptions) {
 export async function importCdZip(file: File, options: ImportOptions) {
   const libraryId = crypto.randomUUID();
   const records: Array<{ path: string; size: number }> = [];
-  let writeQueue = Promise.resolve();
-  let extractionError: Error | null = null;
-  let extractedBytes = 0;
-  let extractedFiles = 0;
 
   try {
     await navigator.storage?.persist?.().catch(() => false);
-
-    const unzipper = new Unzip((entry) => {
-      const path = normalizePath(entry.name);
-      if (!path || entry.name.endsWith('/') || isJunkPath(path)) return;
-      extractedFiles += 1;
-      if (extractedFiles > MAX_ARCHIVE_FILES) {
-        extractionError = new Error(
-          'This ZIP contains too many files to be a Goblins 3 CD folder.',
-        );
-        return;
-      }
-
-      const chunks: ArrayBuffer[] = [];
-      let size = 0;
-      entry.ondata = (error, data, final) => {
-        if (error) {
-          extractionError = error;
-          return;
-        }
-        if (data.length) {
-          extractedBytes += data.length;
-          if (extractedBytes > MAX_EXTRACTED_BYTES) {
-            extractionError = new Error(
-              'This ZIP expands beyond the safe 900 MB import limit.',
-            );
-            entry.terminate();
-            return;
-          }
-          const copy = new Uint8Array(data.length);
-          copy.set(data);
-          chunks.push(copy.buffer);
-          size += data.length;
-        }
-        if (!final) return;
-
-        const blob = new Blob(chunks, { type: 'application/octet-stream' });
-        records.push({ path, size });
-        writeQueue = writeQueue.then(() =>
-          putFile({
-            key: `${libraryId}:${path}`,
-            libraryId,
-            path,
-            size,
-            blob,
-          }),
-        );
-      };
-      entry.start();
+    options.onProgress?.({
+      phase: 'reading',
+      percent: 2,
+      detail: 'Inspecting the ZIP directory…',
     });
-    unzipper.register(UnzipInflate);
-
-    const chunkSize = 1024 * 1024;
-    for (let offset = 0; offset < file.size; offset += chunkSize) {
-      const end = Math.min(file.size, offset + chunkSize);
-      const chunk = new Uint8Array(await file.slice(offset, end).arrayBuffer());
-      unzipper.push(chunk, end === file.size);
-      if (extractionError) throw extractionError;
-      options.onProgress?.({
-        phase: 'reading',
-        percent: Math.max(1, Math.round((end / file.size) * 78)),
-        detail: `Reading CD archive… ${Math.round((end / file.size) * 100)}%`,
-      });
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const entries = await readZipDirectory(file);
+    const { selected } = selectCdFiles(entries);
+    for (const entry of selected) {
+      if (entry.encrypted) {
+        throw new Error(`${entry.path} is encrypted and cannot be imported.`);
+      }
+      if (entry.compression !== 0 && entry.compression !== 8) {
+        throw new Error(
+          `${entry.path} uses an unsupported ZIP compression method.`,
+        );
+      }
     }
 
-    options.onProgress?.({
-      phase: 'saving',
-      percent: 84,
-      detail: 'Saving CD files on this device…',
-    });
-    await writeQueue;
-    if (extractionError) throw extractionError;
+    const totalCompressedBytes = selected.reduce(
+      (sum, entry) => sum + entry.compressedSize,
+      0,
+    );
+    let processedCompressedBytes = 0;
+    for (let index = 0; index < selected.length; index += 1) {
+      const entry = selected[index];
+      const blob = await extractZipEntry(file, entry, (bytes) => {
+        processedCompressedBytes += bytes;
+        const extractionProgress = totalCompressedBytes
+          ? processedCompressedBytes / totalCompressedBytes
+          : 1;
+        options.onProgress?.({
+          phase: 'reading',
+          percent: 5 + Math.round(extractionProgress * 80),
+          detail: `Extracting CD file ${index + 1} of ${selected.length}…`,
+        });
+      });
+
+      options.onProgress?.({
+        phase: 'saving',
+        percent: 86 + Math.round(((index + 1) / selected.length) * 7),
+        detail: `Saving CD file ${index + 1} of ${selected.length}…`,
+      });
+      await putFile({
+        key: `${libraryId}:${entry.path}`,
+        libraryId,
+        path: entry.path,
+        size: entry.size,
+        blob,
+      });
+      records.push({ path: entry.path, size: entry.size });
+    }
 
     options.onProgress?.({
       phase: 'validating',
@@ -390,7 +625,6 @@ export async function importCdZip(file: File, options: ImportOptions) {
     });
     return await finalizeImport(libraryId, records, options.sourceName);
   } catch (error) {
-    await writeQueue.catch(() => {});
     await deleteLibraryFiles(libraryId).catch(() => {});
     throw explainStorageError(error);
   }
