@@ -43,7 +43,8 @@ type CdFileRecord = {
   fileSize: number;
   chunkIndex: number;
   chunkCount: number;
-  blob: Blob;
+  data: ArrayBuffer;
+  blob?: Blob;
 };
 
 type ImportProgress = {
@@ -384,6 +385,7 @@ const putFile = async (
     const start = chunkIndex * STORAGE_CHUNK_SIZE;
     const chunk = blob.slice(start, Math.min(size, start + STORAGE_CHUNK_SIZE));
     try {
+      const data = await chunk.arrayBuffer();
       await putFileChunk({
         key: `${libraryId}:${path}:${String(chunkIndex).padStart(5, '0')}`,
         libraryId,
@@ -392,7 +394,7 @@ const putFile = async (
         fileSize: size,
         chunkIndex,
         chunkCount,
-        blob: chunk,
+        data,
       });
     } catch (error) {
       const detail =

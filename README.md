@@ -8,6 +8,7 @@ A mobile-first ScummVM WebAssembly player for the **Goblins Quest 3 DOS CD editi
 - Local-only full DOS CD import from a ZIP on iPhone or an extracted folder on desktop
 - Selective ZIP extraction finds the playable CD folder first, skipping bundled raw disc images and duplicate installer trees that waste mobile memory
 - Large music and speech files are stored as small IndexedDB chunks and streamed into ScummVM to avoid iPhone transaction and memory failures
+- IndexedDB records contain plain binary buffers rather than Blob/File objects, avoiding WebKit's file-backed Blob storage failure
 - CD validation using ScummVM's Goblins 3 CD data markers (`intro.stk` and `mus_gob3.lic`)
 - Imported CD files persist in IndexedDB and are reconstructed in ScummVM's in-memory filesystem at launch; they are never sent to the server
 - Safe replacement: a bad import is rejected without removing the previously working local CD library

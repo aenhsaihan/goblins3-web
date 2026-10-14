@@ -318,7 +318,9 @@ onscreen_control=false
                 if ((record.chunkIndex || 0) !== chunkIndex) {
                   throw new Error(`The stored copy of ${relativePath} is out of order. Please import the ZIP again.`);
                 }
-                const data = new Uint8Array(await record.blob.arrayBuffer());
+                const data = record.data
+                  ? new Uint8Array(record.data)
+                  : new Uint8Array(await record.blob.arrayBuffer());
                 FS.write(stream, data, 0, data.length, undefined);
                 loadedBytes += data.length;
                 const fileProgress = (index + (chunkIndex + 1) / file.chunks.length) / cdFiles.length;
