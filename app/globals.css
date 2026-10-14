@@ -172,6 +172,10 @@ html.game-expanded body {
   background: linear-gradient(180deg, #1a1715, #100e0d);
 }
 
+html.standalone-app .cabinet-bar {
+  display: none;
+}
+
 .game-frame-wrap {
   position: relative;
   aspect-ratio: 16 / 10;
@@ -270,16 +274,7 @@ html.game-expanded body {
   }
 
   .cabinet-bar {
-    position: absolute;
-    z-index: 20;
-    top: max(0.35rem, env(safe-area-inset-top));
-    right: max(0.35rem, env(safe-area-inset-right));
-    left: max(0.35rem, env(safe-area-inset-left));
-    height: 2.1rem;
-    border: 1px solid rgb(255 255 255 / 0.1);
-    border-radius: 0.4rem;
-    background: rgb(10 9 8 / 0.76);
-    backdrop-filter: blur(12px);
+    display: none;
   }
 
   .game-frame-wrap {

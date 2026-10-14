@@ -46,6 +46,26 @@
         letter-spacing: .08em; text-transform: uppercase; backdrop-filter: blur(10px); touch-action: manipulation;
       }
       .control:active { background: rgba(241,199,91,.25); transform: translateY(1px); }
+      #pan-controls { position: absolute; inset: 0; z-index: 7; display: none; pointer-events: none; }
+      .pan-control {
+        position: absolute; top: 43%; display: grid; width: 2.65rem; height: 4.8rem;
+        place-items: center; transform: translateY(-50%); pointer-events: auto;
+        border: 1px solid rgba(255,255,255,.17); border-radius: .55rem;
+        background: rgba(10,8,7,.5); color: rgba(255,247,218,.78);
+        font: 600 1.45rem/1 ui-monospace, monospace; backdrop-filter: blur(8px);
+        touch-action: none; opacity: .48; transition: opacity 120ms ease, background 120ms ease;
+      }
+      .pan-control.is-active {
+        opacity: 1; background: rgba(241,199,91,.3); color: #fff4c9;
+        box-shadow: 0 0 20px rgba(241,199,91,.14);
+      }
+      #pan-left { left: max(.45rem, env(safe-area-inset-left)); }
+      #pan-right { right: max(.45rem, env(safe-area-inset-right)); }
+      html.standalone #fullscreen { display: none; }
+      html.standalone #controls {
+        top: max(.45rem, env(safe-area-inset-top)); bottom: auto; opacity: .42;
+      }
+      html.standalone .control { min-height: 2.15rem; padding: .45rem .6rem; }
       #rotate-tip {
         display: none; position: absolute; z-index: 7; left: 50%; bottom: 4.1rem; transform: translateX(-50%);
         border: 1px solid rgba(241,199,91,.22); border-radius: .4rem; padding: .55rem .7rem;
@@ -53,6 +73,7 @@
       }
       @media (orientation: portrait) and (max-width: 720px) { #rotate-tip { display: block; } }
       @media (orientation: landscape) and (max-height: 760px) {
+        body.ready #pan-controls { display: block; }
         canvas {
           left: max(.4rem, env(safe-area-inset-left));
           right: max(.4rem, env(safe-area-inset-right));
@@ -85,6 +106,10 @@
       </div>
     </div>
     <div id="rotate-tip">Rotate your phone for the full view</div>
+    <div id="pan-controls" aria-label="Camera pan controls">
+      <button class="pan-control" id="pan-left" type="button" aria-label="Hold to pan camera left">‹</button>
+      <button class="pan-control" id="pan-right" type="button" aria-label="Hold to pan camera right">›</button>
+    </div>
     <div id="controls" aria-label="Game controls">
       <button class="control" id="sound" type="button">Sound</button>
       <button class="control" id="fullscreen" type="button">Full screen</button>
@@ -100,6 +125,9 @@
         const parentOrigin = location.origin;
         let lastPointer = { x: innerWidth / 2, y: innerHeight / 2 };
         let playerReady = false;
+        let panTimer = 0;
+        let panDirection = 0;
+        let panTick = 0;
         const demoDirectory = '/games/gob3-dos-demo-en';
         const demoFiles = [
           '2.exe', '2.txt', 'all.ask', 'cat.inf', 'cd.cfg', 'gob3.exe',
@@ -169,6 +197,7 @@ onscreen_control=false
           playerReady = true;
           setTimeout(() => {
             status.classList.add('hidden');
+            document.body.classList.add('ready');
             document.getElementById('download-modal').style.display = 'none';
             notify('ready', 'Demo ready');
             document.title = 'Goblins Quest 3 — playable DOS demo';
@@ -181,6 +210,65 @@ onscreen_control=false
             if (context.state === 'suspended') await context.resume().catch(() => {});
           }
           canvas.focus({ preventScroll: true });
+        };
+
+        const sendPanPulse = () => {
+          if (!playerReady || !panDirection) return;
+
+          const rect = canvas.getBoundingClientRect();
+          const edgeWobble = panTick % 2;
+          const x = panDirection < 0
+            ? rect.left + edgeWobble
+            : rect.right - 1 - edgeWobble;
+          const y = rect.top + (rect.height * 0.36);
+          const pointerEvent = {
+            pointerType: 'mouse',
+            pointerId: 773,
+            button: -1,
+            buttons: 0,
+            type: 'pointermove',
+            movementX: panDirection * 2,
+            movementY: 0,
+            clientX: x,
+            clientY: y,
+          };
+
+          if (typeof canvas.sdlEventHandlerPointerGeneric === 'function') {
+            canvas.sdlEventHandlerPointerGeneric(pointerEvent);
+          } else if (typeof window.PointerEvent === 'function') {
+            canvas.dispatchEvent(new window.PointerEvent('pointermove', {
+              bubbles: true,
+              cancelable: true,
+              ...pointerEvent,
+            }));
+          }
+
+          lastPointer = { x, y };
+          panTick += 1;
+        };
+
+        const stopPan = () => {
+          if (panTimer) window.clearInterval(panTimer);
+          panTimer = 0;
+          panDirection = 0;
+          document.querySelectorAll('.pan-control').forEach((button) => {
+            button.classList.remove('is-active');
+            button.setAttribute('aria-pressed', 'false');
+          });
+        };
+
+        const startPan = (direction, event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          stopPan();
+          unlockAudio();
+          panDirection = direction;
+          panTick = 0;
+          event.currentTarget.classList.add('is-active');
+          event.currentTarget.setAttribute('aria-pressed', 'true');
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          sendPanPulse();
+          panTimer = window.setInterval(sendPanPulse, 34);
         };
 
         document.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -209,6 +297,14 @@ onscreen_control=false
         canvas.addEventListener('touchend', (event) => event.preventDefault(), { passive: false, capture: true });
         canvas.addEventListener('touchcancel', (event) => event.preventDefault(), { passive: false, capture: true });
 
+        document.getElementById('pan-left').addEventListener('pointerdown', (event) => startPan(-1, event));
+        document.getElementById('pan-right').addEventListener('pointerdown', (event) => startPan(1, event));
+        document.addEventListener('pointerup', stopPan, true);
+        document.addEventListener('pointercancel', stopPan, true);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) stopPan();
+        });
+
         document.getElementById('sound').addEventListener('click', unlockAudio);
         const fullscreenButton = document.getElementById('fullscreen');
         fullscreenButton.addEventListener('click', async () => {
@@ -231,6 +327,9 @@ onscreen_control=false
           if (event.origin !== location.origin || event.data?.source !== 'goblins3-shell') return;
           if (event.data.type === 'fullscreen-state') {
             fullscreenButton.textContent = event.data.expanded ? 'Exit' : 'Full screen';
+          }
+          if (event.data.type === 'display-mode') {
+            document.documentElement.classList.toggle('standalone', Boolean(event.data.standalone));
           }
           if (event.data.type === 'viewport-change') {
             for (const delay of [0, 80, 220]) {

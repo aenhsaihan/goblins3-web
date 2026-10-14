@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const PLAYER_URL =
-  '/player.html?build=10a#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
+  '/player.html?build=11#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 
 type PlayerMessage = {
   source?: string;
@@ -32,6 +32,18 @@ export default function Home() {
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState('Preparing the ScummVM engine…');
+
+  const syncPlayerDisplayMode = useCallback(() => {
+    const standalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+
+    document.documentElement.classList.toggle('standalone-app', standalone);
+    frameRef.current?.contentWindow?.postMessage(
+      { source: 'goblins3-shell', type: 'display-mode', standalone },
+      window.location.origin,
+    );
+  }, []);
 
   const toggleFullscreen = useCallback(async (tryNativeFullscreen: boolean) => {
     const next = !expandedRef.current;
@@ -70,6 +82,7 @@ export default function Home() {
       if (event.data.type === 'ready') {
         setReady(true);
         setStatus('Demo ready');
+        syncPlayerDisplayMode();
       } else if (event.data.type === 'status' && event.data.text) {
         setStatus(event.data.text);
       } else if (event.data.type === 'toggle-fullscreen') {
@@ -79,7 +92,17 @@ export default function Home() {
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [toggleFullscreen]);
+  }, [syncPlayerDisplayMode, toggleFullscreen]);
+
+  useEffect(() => {
+    const displayMode = window.matchMedia('(display-mode: standalone)');
+    syncPlayerDisplayMode();
+    displayMode.addEventListener('change', syncPlayerDisplayMode);
+    return () => {
+      displayMode.removeEventListener('change', syncPlayerDisplayMode);
+      document.documentElement.classList.remove('standalone-app');
+    };
+  }, [syncPlayerDisplayMode]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('game-expanded', expanded);
@@ -237,6 +260,7 @@ export default function Home() {
               title="Playable Goblins Quest 3 DOS demo"
               src={PLAYER_URL}
               allow="autoplay; fullscreen"
+              onLoad={syncPlayerDisplayMode}
               className="game-frame"
             />
           </div>
@@ -246,7 +270,7 @@ export default function Home() {
           <ControlCard
             icon={<MousePointer2 />}
             title="Direct mouse touch"
-            copy="Tap where you want to click. Drag across the scene to move the pointer precisely."
+            copy="Tap or drag normally. In wide rooms, hold the left or right edge arrow for continuous camera panning."
           />
           <ControlCard
             icon={<Hand />}
