@@ -33,7 +33,7 @@ import {
 const DEMO_PLAYER_URL =
   '/player.html?build=20-ios-audio-queue&edition=demo&audio_pipeline=queued&SDL_AUDIO_DEVICE_SAMPLE_FRAMES=1024#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 const CD_PLAYER_URL =
-  '/player.html?build=20-ios-audio-queue&edition=cd&audio_pipeline=queued&SDL_AUDIO_DEVICE_SAMPLE_FRAMES=1024#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
+  '/player.html?build=21-audio-clock-sync&edition=cd&runtime=audio-sync&audio_pipeline=direct&SDL_AUDIO_DEVICE_SAMPLE_FRAMES=4096#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
 
 type Edition = 'demo' | 'cd';
 
