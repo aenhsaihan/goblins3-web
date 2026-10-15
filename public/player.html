@@ -252,13 +252,31 @@ onscreen_control=false
           request.onerror = () => reject(request.error || new Error('Could not open local CD storage.'));
         });
 
+        const getStoredRecord = (database, key) => requestResult(
+          database.transaction('files', 'readonly').objectStore('files').get(key),
+        );
+
+        const parseStoredFileKey = (libraryId, key) => {
+          if (typeof key !== 'string') return null;
+          const prefix = `${libraryId}:`;
+          if (!key.startsWith(prefix)) return null;
+          const storedPathAndChunk = key.slice(prefix.length);
+          const separator = storedPathAndChunk.lastIndexOf(':');
+          if (separator < 1) return null;
+          const chunkLabel = storedPathAndChunk.slice(separator + 1);
+          if (!/^\d{5}$/.test(chunkLabel)) return null;
+          return {
+            key,
+            path: storedPathAndChunk.slice(0, separator),
+            chunkIndex: Number(chunkLabel),
+          };
+        };
+
         const loadCdFiles = async () => {
           const database = await openCdDatabase();
-          let metadata;
-          let records;
           try {
             const metaTransaction = database.transaction('meta', 'readonly');
-            metadata = await requestResult(
+            const metadata = await requestResult(
               metaTransaction.objectStore('meta').get('active-library'),
             );
             if (!metadata) {
@@ -266,74 +284,91 @@ onscreen_control=false
             }
 
             const fileTransaction = database.transaction('files', 'readonly');
-            records = await requestResult(
+            const storedKeys = await requestResult(
               fileTransaction
                 .objectStore('files')
                 .index('libraryId')
-                .getAll(IDBKeyRange.only(metadata.libraryId)),
+                .getAllKeys(IDBKeyRange.only(metadata.libraryId)),
             );
+
+            const rootPrefix = metadata.root ? `${metadata.root}/` : '';
+            const filesByPath = new Map();
+            for (const storedKey of storedKeys) {
+              const parsed = parseStoredFileKey(metadata.libraryId, storedKey);
+              if (!parsed || (rootPrefix && !parsed.path.startsWith(rootPrefix))) continue;
+              // This WebAssembly runtime has Vorbis support but was built
+              // without a FLAC decoder. Do not spend another 114 MB of the
+              // iPhone's memory copying a track that ScummVM cannot play.
+              if (/(?:^|\/)track_?\d+\.f(?:la|lac)$/i.test(parsed.path)) continue;
+              if (!filesByPath.has(parsed.path)) filesByPath.set(parsed.path, []);
+              filesByPath.get(parsed.path).push(parsed);
+            }
+
+            const cdFiles = Array.from(filesByPath, ([path, chunks]) => ({
+              path,
+              chunks: chunks.sort((a, b) => a.chunkIndex - b.chunkIndex),
+            })).sort((a, b) => a.path.localeCompare(b.path));
+
+            if (!cdFiles.length) {
+              throw new Error('The stored CD library is empty. Please import it again.');
+            }
+
+            FS.mkdirTree(cdDirectory);
+            let loadedBytes = 0;
+            for (let index = 0; index < cdFiles.length; index += 1) {
+              const file = cdFiles[index];
+              const relativePath = rootPrefix ? file.path.slice(rootPrefix.length) : file.path;
+              if (!relativePath) continue;
+              const slash = relativePath.lastIndexOf('/');
+              if (slash >= 0) FS.mkdirTree(`${cdDirectory}/${relativePath.slice(0, slash)}`);
+
+              let expectedChunks = file.chunks.length;
+              let expectedSize = 0;
+              let storedSize = 0;
+              const stream = FS.open(`${cdDirectory}/${relativePath}`, 'w');
+              try {
+                for (let chunkIndex = 0; chunkIndex < file.chunks.length; chunkIndex += 1) {
+                  const chunk = file.chunks[chunkIndex];
+                  if (chunk.chunkIndex !== chunkIndex) {
+                    throw new Error(`The stored copy of ${relativePath} is out of order. Please import the ZIP again.`);
+                  }
+
+                  // Read one 4 MB record at a time. The old getAll() path
+                  // cloned the entire 200+ MB CD library into JavaScript and
+                  // then copied it again into WebAssembly memory, which put
+                  // mobile Safari under severe memory pressure.
+                  const record = await getStoredRecord(database, chunk.key);
+                  if (!record) {
+                    throw new Error(`The stored copy of ${relativePath} is incomplete. Please import the ZIP again.`);
+                  }
+                  if (chunkIndex === 0) {
+                    expectedChunks = record.chunkCount || 1;
+                    expectedSize = record.fileSize || record.size;
+                  }
+                  const data = record.data
+                    ? new Uint8Array(record.data)
+                    : new Uint8Array(await record.blob.arrayBuffer());
+                  FS.write(stream, data, 0, data.length, undefined);
+                  storedSize += data.length;
+                  loadedBytes += data.length;
+                  const fileProgress = (index + (chunkIndex + 1) / file.chunks.length) / cdFiles.length;
+                  const percent = Math.round(fileProgress * 78) + 10;
+                  const loadedMb = loadedBytes / (1024 * 1024);
+                  statusText.textContent = `Preparing CD files ${index + 1}/${cdFiles.length} · ${loadedMb.toFixed(0)} MB…`;
+                  progress.style.width = `${percent}%`;
+                  notify('status', `Preparing CD files ${index + 1}/${cdFiles.length}…`);
+                  await new Promise((resolve) => setTimeout(resolve, 0));
+                }
+              } finally {
+                FS.close(stream);
+              }
+
+              if (file.chunks.length !== expectedChunks || storedSize !== expectedSize) {
+                throw new Error(`The stored copy of ${relativePath} is incomplete. Please import the ZIP again.`);
+              }
+            }
           } finally {
             database.close();
-          }
-
-          const rootPrefix = metadata.root ? `${metadata.root}/` : '';
-          const cdRecords = records
-            .filter((record) => !rootPrefix || record.path.startsWith(rootPrefix))
-            .sort((a, b) => {
-              const pathOrder = a.path.localeCompare(b.path);
-              return pathOrder || (a.chunkIndex || 0) - (b.chunkIndex || 0);
-            });
-
-          if (!cdRecords.length) {
-            throw new Error('The stored CD library is empty. Please import it again.');
-          }
-
-          const filesByPath = new Map();
-          for (const record of cdRecords) {
-            if (!filesByPath.has(record.path)) filesByPath.set(record.path, []);
-            filesByPath.get(record.path).push(record);
-          }
-          const cdFiles = Array.from(filesByPath, ([path, chunks]) => ({ path, chunks }));
-
-          FS.mkdirTree(cdDirectory);
-          let loadedBytes = 0;
-          for (let index = 0; index < cdFiles.length; index += 1) {
-            const file = cdFiles[index];
-            const relativePath = rootPrefix ? file.path.slice(rootPrefix.length) : file.path;
-            if (!relativePath) continue;
-            const slash = relativePath.lastIndexOf('/');
-            if (slash >= 0) FS.mkdirTree(`${cdDirectory}/${relativePath.slice(0, slash)}`);
-
-            const expectedChunks = file.chunks[0].chunkCount || 1;
-            const expectedSize = file.chunks[0].fileSize || file.chunks[0].size;
-            const storedSize = file.chunks.reduce((sum, chunk) => sum + chunk.size, 0);
-            if (file.chunks.length !== expectedChunks || storedSize !== expectedSize) {
-              throw new Error(`The stored copy of ${relativePath} is incomplete. Please import the ZIP again.`);
-            }
-
-            const stream = FS.open(`${cdDirectory}/${relativePath}`, 'w');
-            try {
-              for (let chunkIndex = 0; chunkIndex < file.chunks.length; chunkIndex += 1) {
-                const record = file.chunks[chunkIndex];
-                if ((record.chunkIndex || 0) !== chunkIndex) {
-                  throw new Error(`The stored copy of ${relativePath} is out of order. Please import the ZIP again.`);
-                }
-                const data = record.data
-                  ? new Uint8Array(record.data)
-                  : new Uint8Array(await record.blob.arrayBuffer());
-                FS.write(stream, data, 0, data.length, undefined);
-                loadedBytes += data.length;
-                const fileProgress = (index + (chunkIndex + 1) / file.chunks.length) / cdFiles.length;
-                const percent = Math.round(fileProgress * 78) + 10;
-                const loadedMb = loadedBytes / (1024 * 1024);
-                statusText.textContent = `Preparing CD files ${index + 1}/${cdFiles.length} · ${loadedMb.toFixed(0)} MB…`;
-                progress.style.width = `${percent}%`;
-                notify('status', `Preparing CD files ${index + 1}/${cdFiles.length}…`);
-                await new Promise((resolve) => setTimeout(resolve, 0));
-              }
-            } finally {
-              FS.close(stream);
-            }
           }
         };
 

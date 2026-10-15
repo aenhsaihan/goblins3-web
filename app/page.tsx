@@ -31,9 +31,9 @@ import {
 } from '@/lib/cd-library';
 
 const DEMO_PLAYER_URL =
-  '/player.html?build=16-buffer-storage&edition=demo#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
+  '/player.html?build=17-streamed-storage&edition=demo#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 const CD_PLAYER_URL =
-  '/player.html?build=16-buffer-storage&edition=cd#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
+  '/player.html?build=17-streamed-storage&edition=cd#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
 
 type Edition = 'demo' | 'cd';
 
@@ -396,19 +396,26 @@ export default function Home() {
             </div>
 
             {library ? (
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-emerald-200/85">
-                <span className="inline-flex items-center gap-1.5">
-                  <HardDrive className="size-3.5" />
-                  {library.release}
-                </span>
-                <span>{library.fileCount} files</span>
-                <span>{formatBytes(library.totalBytes)} stored locally</span>
-              </div>
+              <>
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-emerald-200/85">
+                  <span className="inline-flex items-center gap-1.5">
+                    <HardDrive className="size-3.5" />
+                    {library.release}
+                  </span>
+                  <span>{library.fileCount} files</span>
+                  <span>{formatBytes(library.totalBytes)} stored locally</span>
+                </div>
+                <p className="mt-2 text-[11px] leading-4 text-stone-500">
+                  CD music uses a ripped <code>track1.ogg</code> beside the game
+                  files. FLAC tracks are safely ignored by this browser runtime.
+                </p>
+              </>
             ) : (
               <p className="mt-3 max-w-2xl text-xs leading-5 text-stone-400">
                 On iPhone, choose a ZIP containing the extracted Goblins 3 CD
-                game folder. On desktop, you can choose the extracted folder
-                directly. A GOG installer by itself is not the game folder.
+                game folder, including <code>track1.ogg</code> for CD music. On
+                desktop, you can choose the extracted folder directly. A GOG
+                installer by itself is not the game folder.
               </p>
             )}
 
