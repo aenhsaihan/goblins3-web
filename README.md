@@ -10,6 +10,7 @@ A mobile-first ScummVM WebAssembly player for the **Goblins Quest 3 DOS CD editi
 - Large music and speech files are stored as small IndexedDB chunks and read into ScummVM one chunk at a time, avoiding a second 200+ MB JavaScript copy on iPhone
 - IndexedDB records contain plain binary buffers rather than Blob/File objects, avoiding WebKit's file-backed Blob storage failure
 - CD music works when the extracted first audio track is supplied as `track1.ogg`; FLAC-only tracks are ignored because the hosted WebAssembly runtime has Vorbis but not FLAC decoding
+- An 8192-sample ScummVM audio buffer gives iOS more headroom when CD music, speech, and animation decoding overlap
 - CD validation using ScummVM's Goblins 3 CD data markers (`intro.stk` and `mus_gob3.lic`)
 - Imported CD files persist in IndexedDB and are reconstructed in ScummVM's in-memory filesystem at launch; they are never sent to the server
 - Safe replacement: a bad import is rejected without removing the previously working local CD library
