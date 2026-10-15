@@ -137,6 +137,9 @@
           '2.exe', '2.txt', 'all.ask', 'cat.inf', 'cd.cfg', 'gob3.exe',
           'imd.itk', 'imd.ltk', 'intro.stk', 'mdo.cfg', 'mdo.def', 'setup.exe'
         ];
+        const playerOptions = new URLSearchParams(location.search);
+        const isIos = /iP(?:hone|ad|od)/i.test(navigator.userAgent)
+          || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         const fixedConfig = `[scummvm]
 versioninfo=2.10.0git
 always_run_fallback_detection_extern=false
@@ -149,6 +152,126 @@ touch_mode_3d_games=mouse
 onscreen_control=false
 `;
         let lastHttpFailure = '';
+
+        // SDL3's WebAssembly backend mixes sound inside a deprecated
+        // ScriptProcessor callback on the browser's main thread. A demanding
+        // Goblins 3 cutscene can delay that callback long enough for iOS to
+        // underrun and emit crackling or silence. For the opt-in iOS pipeline,
+        // replace only playback ScriptProcessors with a small ahead-of-time
+        // queue of native AudioBufferSource nodes. ScummVM still performs all
+        // decoding and mixing; Web Audio merely keeps roughly 320 ms ready so
+        // a slow animation frame cannot starve the speaker.
+        const installIosAudioQueue = () => {
+          const audioPipeline = playerOptions.get('audio_pipeline');
+          const forcedTest = audioPipeline === 'queued-test';
+          if (audioPipeline !== 'queued' && !forcedTest) return;
+          if (!isIos && !forcedTest) return;
+
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          const prototype = AudioContextClass && AudioContextClass.prototype;
+          const nativeCreateScriptProcessor = prototype && prototype.createScriptProcessor;
+          if (!nativeCreateScriptProcessor || nativeCreateScriptProcessor.__gob3QueuedAudio) return;
+
+          const createQueuedProcessor = function(bufferSize, inputChannels, outputChannels) {
+            if (inputChannels || !outputChannels || !bufferSize) {
+              return nativeCreateScriptProcessor.call(this, bufferSize, inputChannels, outputChannels);
+            }
+
+            const context = this;
+            const outputNode = context.createGain();
+            const scheduledSources = new Set();
+            const scheduleAheadSeconds = 0.32;
+            const initialLeadSeconds = 0.12;
+            let audioProcess = null;
+            let connected = false;
+            let nextPlayTime = 0;
+            let pumpTimer = 0;
+
+            const processor = {
+              get bufferSize() {
+                return bufferSize;
+              },
+              get onaudioprocess() {
+                return audioProcess;
+              },
+              set onaudioprocess(callback) {
+                audioProcess = typeof callback === 'function' ? callback : null;
+              },
+              connect(destination) {
+                if (connected) return destination;
+                connected = true;
+                outputNode.connect(destination);
+                nextPlayTime = 0;
+                pump();
+                pumpTimer = window.setInterval(pump, 24);
+                context.addEventListener('statechange', pump);
+                output.value += `iOS queued audio enabled: ${bufferSize} frames, ${Math.round(scheduleAheadSeconds * 1000)} ms reserve.\n`;
+                return destination;
+              },
+              disconnect() {
+                connected = false;
+                if (pumpTimer) window.clearInterval(pumpTimer);
+                pumpTimer = 0;
+                context.removeEventListener('statechange', pump);
+                for (const source of scheduledSources) {
+                  try { source.stop(); } catch (_) {}
+                  try { source.disconnect(); } catch (_) {}
+                }
+                scheduledSources.clear();
+                try { outputNode.disconnect(); } catch (_) {}
+              },
+            };
+
+            function pump() {
+              if (!connected || context.state !== 'running' || typeof audioProcess !== 'function') return;
+
+              if (nextPlayTime < context.currentTime + 0.02) {
+                nextPlayTime = context.currentTime + initialLeadSeconds;
+              }
+
+              const targetTime = context.currentTime + scheduleAheadSeconds;
+              let generated = 0;
+              while (nextPlayTime < targetTime && generated < 8) {
+                const audioBuffer = context.createBuffer(
+                  outputChannels,
+                  bufferSize,
+                  context.sampleRate,
+                );
+
+                try {
+                  audioProcess.call(processor, {
+                    inputBuffer: null,
+                    outputBuffer: audioBuffer,
+                    playbackTime: nextPlayTime,
+                  });
+                } catch (error) {
+                  console.error('Queued audio mix failed:', error);
+                  processor.disconnect();
+                  return;
+                }
+
+                const source = context.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(outputNode);
+                source.addEventListener('ended', () => {
+                  scheduledSources.delete(source);
+                  try { source.disconnect(); } catch (_) {}
+                }, { once: true });
+                source.start(nextPlayTime);
+                scheduledSources.add(source);
+                nextPlayTime += audioBuffer.duration;
+                generated += 1;
+              }
+            }
+
+            return processor;
+          };
+
+          createQueuedProcessor.__gob3QueuedAudio = true;
+          prototype.createScriptProcessor = createQueuedProcessor;
+        };
+
+        installIosAudioQueue();
 
         // Keep every demo-data request on this origin. This avoids mobile
         // privacy relays and cross-origin range-request handling differences.
