@@ -138,7 +138,7 @@
           'imd.itk', 'imd.ltk', 'intro.stk', 'mdo.cfg', 'mdo.def', 'setup.exe'
         ];
         const playerOptions = new URLSearchParams(location.search);
-        const useAudioSyncRuntime = playerOptions.get('runtime') === 'audio-sync';
+        const useCustomRuntime = playerOptions.get('runtime') === 'low-dpi';
         const isIos = /iP(?:hone|ad|od)/i.test(navigator.userAgent)
           || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         const fixedConfig = `[scummvm]
@@ -731,20 +731,20 @@ onscreen_control=false
           },
           locateFile(path) {
             if (path === 'scummvm.wasm') {
-              return useAudioSyncRuntime
+              return useCustomRuntime
                 ? '/runtime-custom/scummvm.wasm'
                 : '/runtime/scummvm.wasm';
             }
             const dataPath = path.indexOf('/data/');
             if (dataPath >= 0) return path.slice(dataPath);
-            return useAudioSyncRuntime
+            return useCustomRuntime
               ? '/runtime-custom/' + path
               : '/runtime/' + path;
           }
         };
 
         const script = document.createElement('script');
-        script.src = useAudioSyncRuntime
+        script.src = useCustomRuntime
           ? '/runtime-custom/scummvm.js'
           : '/runtime/scummvm.js';
         script.async = true;

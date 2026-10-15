@@ -2,14 +2,14 @@
 
 ## ScummVM WebAssembly runtime
 
-The official demo loads the matching integration build through a narrow same-origin proxy. The CD edition uses a Gob-only ScummVM WebAssembly build committed under `public/runtime-custom`, with the matching startup support files under `public/data`.
+The stable demo and CD edition load the matching integration build through a narrow same-origin proxy. An opt-in low-DPI experiment uses a Gob-only ScummVM WebAssembly build committed under `public/runtime-custom`, with the matching startup support files under `public/data`.
 
 - Integration build source: https://github.com/chkuendig/scummvm-demo/tree/4babbd680a05a724de2ebf20ee317cd53742b9bf
 - Corresponding ScummVM source: https://github.com/chkuendig/scummvm/tree/de7b4e39851d0111ec7e3f1165fd9c2997ee9419
 - ScummVM license: GNU General Public License v3.0 or later; see https://github.com/chkuendig/scummvm/blob/de7b4e39851d0111ec7e3f1165fd9c2997ee9419/COPYING
-- Local source patch used for the CD runtime: `patches/scummvm-gob3-audio-sync.patch`
+- Local source patch used for the experimental runtime: `patches/scummvm-web-low-dpi.patch`
 
-The runtime proxy exposes only the integration build's main WebAssembly files. The bundled CD runtime was compiled with Emscripten 6.0.11, the Gob engine built in, and Ogg/Vorbis support enabled. The bundled support files correspond to the source revisions above.
+The runtime proxy exposes only the integration build's main WebAssembly files. The bundled experimental runtime was compiled with Emscripten 6.0.11, the Gob engine built in, and Ogg/Vorbis support enabled. The bundled support files correspond to the source revisions above.
 
 ## fflate
 

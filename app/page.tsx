@@ -33,7 +33,9 @@ import {
 const DEMO_PLAYER_URL =
   '/player.html?build=20-ios-audio-queue&edition=demo&audio_pipeline=queued&SDL_AUDIO_DEVICE_SAMPLE_FRAMES=1024#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-dos-demo-en gob:gob3';
 const CD_PLAYER_URL =
-  '/player.html?build=21-audio-clock-sync&edition=cd&runtime=audio-sync&audio_pipeline=direct&SDL_AUDIO_DEVICE_SAMPLE_FRAMES=4096#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
+  '/player.html?build=20-ios-audio-queue&edition=cd&audio_pipeline=queued&SDL_AUDIO_DEVICE_SAMPLE_FRAMES=1024#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
+const CD_LOW_DPI_PLAYER_URL =
+  '/player.html?build=22-low-dpi&edition=cd&runtime=low-dpi&audio_pipeline=queued&SDL_AUDIO_DEVICE_SAMPLE_FRAMES=1024#--config=/goblins3-web.ini --music-driver=adlib --path=/games/gob3-cd gob:gob3';
 
 type Edition = 'demo' | 'cd';
 
@@ -61,8 +63,14 @@ export default function Home() {
   const [importProgress, setImportProgress] = useState(0);
   const [importStatus, setImportStatus] = useState('');
   const [importError, setImportError] = useState('');
+  const [lowDpiExperiment, setLowDpiExperiment] = useState(false);
 
-  const playerUrl = edition === 'cd' ? CD_PLAYER_URL : DEMO_PLAYER_URL;
+  const playerUrl =
+    edition === 'cd'
+      ? lowDpiExperiment
+        ? CD_LOW_DPI_PLAYER_URL
+        : CD_PLAYER_URL
+      : DEMO_PLAYER_URL;
 
   const launchEdition = useCallback((nextEdition: Edition) => {
     setEdition(nextEdition);
@@ -144,6 +152,13 @@ export default function Home() {
       setImporting(false);
     }
   }, [launchEdition]);
+
+  useEffect(() => {
+    setLowDpiExperiment(
+      new URLSearchParams(window.location.search).get('audio-fix') ===
+        '22-low-dpi',
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

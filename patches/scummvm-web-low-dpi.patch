@@ -1,0 +1,22 @@
+diff --git a/backends/graphics/openglsdl/openglsdl-graphics.cpp b/backends/graphics/openglsdl/openglsdl-graphics.cpp
+index b2121460..369d6c43 100644
+--- a/backends/graphics/openglsdl/openglsdl-graphics.cpp
++++ b/backends/graphics/openglsdl/openglsdl-graphics.cpp
+@@ -991,7 +991,17 @@ bool OpenGLSdlGraphicsManager::setupMode(uint width, uint height) {
+ 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, _glContextMinor);
+ 
+ #if SDL_VERSION_ATLEAST(3, 0, 0)
++		// The browser compositor already scales the canvas to its CSS size.
++		// Rendering the low-resolution game into a device-pixel-ratio-sized
++		// backing store needlessly multiplies the WebGL work on Retina phones
++		// and can starve the Emscripten audio callback during Coktel videos.
++		// Keep the logical/CSS resolution for the web build; native SDL3 builds
++		// retain their high-DPI backing store.
++#ifdef EMSCRIPTEN
++		uint32 flags = SDL_WINDOW_OPENGL;
++#else
+ 		uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY;
++#endif
+ #else
+ 		uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
+ #endif

@@ -10,8 +10,8 @@ A mobile-first ScummVM WebAssembly player for the **Goblins Quest 3 DOS CD editi
 - Large music and speech files are stored as small IndexedDB chunks and read into ScummVM one chunk at a time, avoiding a second 200+ MB JavaScript copy on iPhone
 - IndexedDB records contain plain binary buffers rather than Blob/File objects, avoiding WebKit's file-backed Blob storage failure
 - CD music works when the extracted first audio track is supplied as `track1.ogg`; FLAC-only tracks are ignored because the hosted WebAssembly runtime has Vorbis but not FLAC decoding
-- A custom Gob-only ScummVM WebAssembly runtime synchronizes Goblins 3 CD speech and embedded IMD cutscenes to audio samples actually produced instead of wall-clock time, preventing a slow browser frame from prematurely ending dialogue
-- The official demo retains the conservative iOS queued-audio pipeline; the CD edition uses the patched direct-audio runtime so its video clock cannot run ahead of audio
+- The stable demo and CD edition use the conservative iOS queued-audio pipeline
+- An opt-in low-DPI Gob-only runtime avoids rendering the low-resolution game into an unnecessarily large Retina backing store, reducing cutscene work without changing ScummVM's timing
 - CD validation using ScummVM's Goblins 3 CD data markers (`intro.stk` and `mus_gob3.lic`)
 - Imported CD files persist in IndexedDB and are reconstructed in ScummVM's in-memory filesystem at launch; they are never sent to the server
 - Safe replacement: a bad import is rejected without removing the previously working local CD library
@@ -34,8 +34,8 @@ pnpm dev
 pnpm build
 ```
 
-The server needs outbound HTTPS access to `scummvm.kuendig.io` for the demo's fallback WebAssembly runtime and to `scummvm-data.kuendig.io` for the demo-data proxy. The CD edition's patched runtime is bundled under `public/runtime-custom`. ScummVM's startup support files are bundled in `public/data` so a browser launch does not depend on the community server accepting a burst of range requests.
+The server needs outbound HTTPS access to `scummvm.kuendig.io` for the stable WebAssembly runtime and to `scummvm-data.kuendig.io` for the demo-data proxy. The opt-in low-DPI runtime is bundled under `public/runtime-custom`. ScummVM's startup support files are bundled in `public/data` so a browser launch does not depend on the community server accepting a burst of range requests.
 
-The custom runtime is built from ScummVM revision `de7b4e39851d0111ec7e3f1165fd9c2997ee9419` with the reproducible source changes in `patches/scummvm-gob3-audio-sync.patch`.
+The custom runtime is built from ScummVM revision `de7b4e39851d0111ec7e3f1165fd9c2997ee9419` with the reproducible source change in `patches/scummvm-web-low-dpi.patch`.
 
 See `THIRD_PARTY_NOTICES.md` for provenance and licensing details.
